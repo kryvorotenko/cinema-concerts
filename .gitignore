@@ -32,3 +32,6 @@ logs/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local document extraction/rendering scratch space
+tmp/

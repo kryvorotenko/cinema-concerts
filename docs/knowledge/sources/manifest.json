@@ -1,0 +1,39 @@
+{
+  "analyzed_on": "2026-11-18",
+  "extractor": "pypdf; page.extract_text()",
+  "page_numbers": "1-based PDF pages, matching printed numbering",
+  "scope": "Common rules, all labs, both C01 cards. Other topic cards are archival only.",
+  "visual_checks": [
+    "Web page 20: C01 invariant/time/money",
+    "DPC page 22: function, scenarios and integration"
+  ],
+  "sources": [
+    {
+      "course": "web",
+      "original_filename": "web-project-guide-2026.pdf",
+      "pdf_sha256": "08a7c29237ea3ed1354ce2a85deee20c39ce480afbfa2035b8a18e6e010b1b6e",
+      "pages": 88,
+      "archive": "sources/web-guide.txt",
+      "archive_sha256": "15276a5e4045783acbb0dcf5fc56769497f16943fae43f3ca3b14a691b021f76",
+      "relevant_pages": "3-17; C01 20-22",
+      "criteria_count": 59,
+      "core_count": 16
+    },
+    {
+      "course": "dpc",
+      "original_filename": "parallel-project-guide-2026.pdf",
+      "pdf_sha256": "07724718b26187201c8d48ad89956b8b2c9c8069d1611c05816cdff2198aec7b",
+      "pages": 100,
+      "archive": "sources/dpc-guide.txt",
+      "archive_sha256": "69aecd5040844fb16e936bd98b11edeab6d833b8e0f9fa15f85e0e350e0d3605",
+      "relevant_pages": "3-17; C01 20-22",
+      "criteria_count": 50,
+      "core_count": 17
+    }
+  ],
+  "team_plan": {
+    "archive": "sources/team-plan-original.md",
+    "sha256": "dbd602d97507a89691d702178d8170fa0c577904d898200421840dbab6f969db",
+    "authority": "User-supplied agreement for lab ownership; technical assumptions are compared separately; embedded offers are not tasks."
+  }
+}
