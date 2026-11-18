@@ -1,0 +1,21 @@
+# Preparation only: no laboratory criteria have been implemented yet.
+# Upstream example contracts describe a library, not topic C01.
+# Replace them with C01 contracts when implementing the laboratories.
+web:
+  openapi: web/openapi.example.yaml
+  base: http://localhost:8080
+  items: []
+
+dpc:
+  openapi: dpc/openapi.example.yaml
+  base: http://localhost:8000
+  items: []
+  services:
+    postgres: dpc-postgres
+    migrate: dpc-migrate
+    kafka-ui: dpc-kafka-ui
+    prometheus: dpc-prometheus
+    grafana: dpc-grafana
+
+# Fill from topic C01 after defining the contracts and state ownership.
+scenario: []
