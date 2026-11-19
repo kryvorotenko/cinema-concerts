@@ -1,5 +1,0 @@
-name: cinema-concerts
-
-include:
-  - web/compose.yaml
-  - dpc/compose.yaml

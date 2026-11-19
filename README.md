@@ -1,114 +1,53 @@
 # C01. Кінотеатри й концерти
 
-Спільний навчальний проєкт Іллі Криворотенка для двох курсів:
+Спільний каркас для курсів «Обмін даними у Web-застосунках» і «Розподілені та паралельні обчислення». Лабораторні роботи ще не реалізовані.
 
-- **Обмін даними у Web-застосунках** — каталог [`web/`](web/README.md).
-- **Розподілені та паралельні обчислення** — каталог [`dpc/`](dpc/README.md).
+## Початок роботи
 
-Тема обох частин: **C01. Кінотеатри й концерти**.
+Потрібні Docker із Compose v2.20+ та Python. Команди виконуються з кореня проєкту:
 
-## Пам'ять проєкту
+```powershell
+git pull
+Copy-Item .env.example .env
+docker compose config --quiet
+docker compose up -d --wait postgres broker
+docker compose run --rm migrate
+docker compose run --rm broker-init
+python experiments/check_foundation.py
+```
 
-Методички та командний розподіл проаналізовано й збережено в
-[`docs/knowledge/`](docs/knowledge/README.md): модель C01, усі 12 лабораторних,
-критерії ядра та розширень, правила перевірки, відповідальність учасників і
-розбіжності початкового плану з методичками. Інструкція для наступних сесій —
-[`AGENTS.md`](AGENTS.md). Це документація вимог, а не звіт про виконані ЛР.
+Запуск оболонок Web і DPC: `docker compose up -d --build`. Web API: http://localhost:8080; DPC API: http://localhost:8000. Це каркаси зі службовими маршрутами. PostgreSQL — `localhost:5432` (локальні база/користувач/пароль: `app`), Kafka — `localhost:9094`, Kafka UI — http://localhost:8085.
 
-## Стан проєкту
+Додаткові компоненти запускаються профілями `async`, `ray`, `spark`, `coordination`, `monitoring`, `extras`, наприклад `docker compose --profile spark up -d --build`. Для всіх профілів потрібен значний запас оперативної пам'яті. Зупинка без видалення даних: `docker compose --profile '*' down`.
 
-Підготовлено спільний репозиторій і запуск інфраструктури обох курсів.
-Предметні API, схеми даних, обчислення та лабораторні роботи ще не реалізовано.
-Початкові приклади про міську бібліотеку збережено як довідкові матеріали;
-вони не є реалізацією C01. Вимоги, інваріанти та межу відповідальності Web/DPC
-буде перенесено з картки C01 перед виконанням лабораторних.
+Клієнти запускаються окремо: `python -m http.server 8081 --bind 127.0.0.1 --directory web/client` і `python -m http.server 8083 --bind 127.0.0.1 --directory dpc/client`.
 
 ## Структура
 
-```text
-cinema-concerts/
-  web/                 # каркас Web, клієнт, сервер, конфігурації, інструменти
-  dpc/                 # каркас DPC, API, Ray, Spark, координатори, інструменти
-  docs/                # спільна документація та походження каркасів
-  compose.yaml         # єдиний запуск обох комплектів
-  checks.yaml          # спільні налаштування перевірки (поки без критеріїв)
-  .env.example         # приклад локальних налаштувань
-  README.md
-```
+| Шлях | Призначення |
+|---|---|
+| `docker-compose.yml` | Єдиний запуск, порти, спільні PostgreSQL і Kafka |
+| `.env.example`, `config/project.env` | Параметри й спільні константи |
+| `migrations/001_shared_foundation.sql` | Початкова схема для обох курсів |
+| `web/`, `dpc/` | Компоненти відповідних курсів |
+| `experiments/`, `results/` | Сценарії перевірки й майбутні результати |
+| `docs/contracts/` | Контракт команди: таблиці, топіки, порти й запуск |
+| `docs/knowledge/`, `AGENTS.md` | Збережені вимоги методичок і розподіл роботи |
 
-## Запуск
+## Контракт команди
 
-Потрібні Docker із Compose з підтримкою `include` (версія 2.20.0 або новіша).
-Вимоги інструментів курсів: Python 3.14, uv та Node.js 22 для Web ws-fleet.
-DPC окремо потребує близько 10–12 ГБ пам'яті Docker, Web — від 6 ГБ;
-для одночасного запуску всіх компонентів потрібен додатковий запас пам'яті.
+Деталі: [контракт Дня 1](docs/contracts/README.md). Усі компоненти використовують одну БД та одного брокера. Топіки: `domain-events`, `notifications`, `ticket-telemetry`. Останній є перейменуванням топіка `scans` із методички; зміст подій входу збережено.
 
-Команди PowerShell з кореня репозиторію:
+`bookings` — утримання Web, `screenings.id` — спільний `performance_id`. Спочатку враховується кількість місць категорії; `seats` підготовлено для конкретних місць у Web ЛР6. DPC перевіряє і погашає `ticket_id` та веде заповненість секторів. Сама схема не реалізує бізнес-операції чи fencing.
 
-```powershell
-Copy-Item .env.example .env  # необов'язково: для зміни параметрів
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps
-curl.exe http://localhost:8080/health
-curl.exe http://localhost:8000/health
-```
+Після початку спільної роботи міграцію `001` не змінюємо; нові зміни оформлюємо наступними погодженими міграціями. Команди запуску з README окремих комплектів — довідкові; використовуйте кореневий Compose. Приклади міграцій міської бібліотеки не застосовуються.
 
-Клієнти запускаються в окремих терміналах:
+Перевірка обмежень схеми та повторної ініціалізації:
 
 ```powershell
-python -m http.server 8081 --bind 127.0.0.1 --directory web/client
-python -m http.server 8083 --bind 127.0.0.1 --directory dpc/client
+Get-Content -Raw experiments/foundation_constraints.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
+docker compose run --rm migrate
+docker compose run --rm broker-init
 ```
 
-Зупинка: `docker compose down`. Дані в іменованих томах зберігаються.
-Запуск інфраструктури не означає готовність предметних механізмів із `TODO`.
-Міграції прикладу бібліотеки автоматично не копіюються в міграції C01.
-
-| Компонент | Web | DPC |
-|---|---|---|
-| API | http://localhost:8080 | http://localhost:8000 |
-| Клієнт | http://localhost:8081 | http://localhost:8083 |
-| PostgreSQL | localhost:5432 | localhost:5433 |
-| Kafka з хоста | localhost:9094 | localhost:9095 |
-| Kafka UI | http://localhost:8085 | http://localhost:8185 |
-| Prometheus | http://localhost:9090 | http://localhost:9091 |
-| Grafana | http://localhost:3000 | http://localhost:3001 |
-
-Ray: http://localhost:8265; Spark: http://localhost:8280.
-Решта адрес наведена в README відповідної частини.
-
-## Спільний проєкт
-
-Обидва комплекти включено через Compose `include`: відносні шляхи збірки
-та монтування залишаються відносними до `web/` і `dpc/`.
-Компоненти доступні в одній мережі: Web API — `http://nginx`, DPC API — `http://api:8000`.
-
-У DPC перейменовано конфліктні сервіси:
-`postgres`, `migrate`, `kafka-ui`, `prometheus`, `grafana` отримали префікс `dpc-`.
-Томи `pgdata` та `faults` також отримали префікс `dpc-`.
-У командах із документації DPC використовуйте ці нові імена, наприклад:
-`docker compose run --rm dpc-migrate` з кореня проєкту.
-У командах Web імена залишилися початковими.
-
-Спільні за назвою змінні Compose для DPC отримали префікс `DPC_`
-(наприклад `DPC_POSTGRES_PORT`, `DPC_CLIENT_ORIGIN`, `DPC_APP_TAG`).
-Актуальний повний приклад параметрів DPC — [`dpc/.env.example`](dpc/.env.example).
-Змінні самих контейнерів, наприклад `DATABASE_URL`, не перейменовано.
-Параметри для спільного запуску задавайте в кореневому `.env`.
-
-Бази даних і брокери Kafka поки окремі: Web використовує `postgres` і `broker:9092`,
-DPC — `dpc-postgres` і `kafka:9092`. Наскрізний обмін, контракти подій і володіння
-станом буде налаштовано за розділом 6 картки DPC C01 під час лабораторних.
-Конфігурації Swarm збережено як окремі навчальні приклади; кореневий Compose їх не підключає.
-
-[`checks.yaml`](checks.yaml) має секції `web`, `dpc`, `scenario`, але ще не містить
-виконаних критеріїв або наскрізного сценарію. Приклади OpenAPI в ньому довідкові.
-
-## Матеріали курсів
-
-- [Web: початковий каркас](web/README.md), [шаблон звіту](web/README-template.md), [інтеграція](web/joint/README.md).
-- [DPC: початковий каркас](dpc/README.md), [шаблон звіту](dpc/README-template.md), [інтеграція](dpc/joint/README.md).
-- [Походження та версії вихідних матеріалів](docs/UPSTREAM.md).
-
-MIT-ліцензії й авторство вихідних каркасів збережено в `web/LICENSE` та `dpc/LICENSE`.
+SQL-перевірка відкочує свої тестові дані. Розподіл лабораторних: [TEAM.md](docs/knowledge/TEAM.md); походження каркасів: [UPSTREAM.md](docs/UPSTREAM.md). Вихідні матеріали Andrii Kovtunenko — MIT, оригінальні LICENSE збережено.

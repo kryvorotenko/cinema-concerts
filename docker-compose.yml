@@ -1,0 +1,906 @@
+# Single shared development stack. Run from the repository root.
+# Constants: config/project.env; ports/experiment settings: .env.example.
+# Optional profiles: async, ray, spark, coordination, monitoring, extras.
+name: cinema-concerts
+services:
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    command:
+    - postgres
+    - -c
+    - max_connections=${PG_MAX_CONNECTIONS:-100}
+    ports:
+    - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U app
+      interval: 2s
+      retries: 30
+  migrate:
+    image: postgres:17.11
+    command:
+    - sh
+    - -c
+    - sh /migrate/migrate.sh $${MIGRATE_TO:+--to $$MIGRATE_TO}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      MIGRATIONS_DIR: /migrations
+      MIGRATE_TO: ${MIGRATE_TO:-}
+    volumes:
+    - ./config/migrate:/migrate:ro
+    - ./migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    env_file:
+    - ./config/project.env
+  app-a:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: app-a
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    ports:
+    - ${APP_A_PORT:-8001}:8000
+    env_file:
+    - ./config/project.env
+  app-b:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: app-b
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    ports:
+    - ${APP_B_PORT:-8002}:8000
+    env_file:
+    - ./config/project.env
+  app-canary:
+    build: ./web/server
+    image: project-web:${CANARY_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: app-canary
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    env_file:
+    - ./config/project.env
+  nginx:
+    image: nginx:1.31.7
+    command:
+    - sh
+    - /etc/nginx/start.sh
+    environment:
+      CANARY_WEIGHT: ${CANARY_WEIGHT:-0}
+    volumes:
+    - ./web/configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    - ./web/configs/nginx/start.sh:/etc/nginx/start.sh:ro
+    ports:
+    - ${NGINX_PORT:-8080}:80
+    depends_on:
+    - app-a
+    - app-b
+    - app-canary
+    - gateway-a
+    - gateway-b
+    restart: unless-stopped
+  broker:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,EXTERNAL://localhost:${KAFKA_HOST_PORT:-9094}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+    - ${KAFKA_HOST_PORT:-9094}:9094
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1
+      interval: 3s
+      retries: 40
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+        - kafka
+    volumes:
+    - kafkadata:/var/lib/kafka/data
+  broker-init:
+    image: apache/kafka:4.3.1
+    command:
+    - sh
+    - /scripts/topics.sh
+    environment:
+      BOOTSTRAP: broker:9092
+      DOMAIN_PARTITIONS: ${DOMAIN_PARTITIONS:-3}
+      NOTIFICATION_PARTITIONS: ${NOTIFICATION_PARTITIONS:-3}
+      TELEMETRY_PARTITIONS: ${TELEMETRY_PARTITIONS:-3}
+    volumes:
+    - ./config/kafka:/scripts:ro
+    depends_on:
+      broker:
+        condition: service_healthy
+    restart: 'no'
+    env_file:
+    - ./config/project.env
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: cinema-concerts
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
+    ports:
+    - ${KAFKA_UI_PORT:-8085}:8080
+    depends_on:
+      broker:
+        condition: service_healthy
+  publisher:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: publisher
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    command:
+    - python
+    - -m
+    - app.publisher
+    env_file:
+    - ./config/project.env
+    profiles:
+    - async
+  worker:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: worker
+      GROUP_ID: worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    command:
+    - python
+    - -m
+    - app.worker
+    env_file:
+    - ./config/project.env
+    profiles:
+    - async
+  router:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: router
+      GROUP_ID: router
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    command:
+    - python
+    - -m
+    - app.router
+    env_file:
+    - ./config/project.env
+    profiles:
+    - async
+  gateway-a:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: gateway-a
+      GROUP_ID: gateway-a
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    command:
+    - uvicorn
+    - app.gateway:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    - --no-access-log
+    ports:
+    - ${GATEWAY_A_PORT:-8091}:8000
+    env_file:
+    - ./config/project.env
+  gateway-b:
+    build: ./web/server
+    image: project-web:${APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      EXTERNAL_URL: http://external-sim:8000
+      REDIS_URL: redis://redis:6379/0
+      FLAGS_URL: http://flags:8016
+      OIDC_ISSUER: http://localhost:8180/realms/project
+      OIDC_INTERNAL_URL: http://keycloak:8180/realms/project
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8081}
+      OTEL_ENABLED: ${OTEL_ENABLED:-off}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INVARIANT_MODE: ${INVARIANT_MODE:-protected}
+      POOL_SIZE: ${POOL_SIZE:-10}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      JWT_REVOCATION: ${JWT_REVOCATION:-on}
+      FAULTS: 'on'
+      INSTANCE: gateway-b
+      GROUP_ID: gateway-b
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      broker-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+    - faults:/faults
+    command:
+    - uvicorn
+    - app.gateway:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    - --no-access-log
+    ports:
+    - ${GATEWAY_B_PORT:-8092}:8000
+    env_file:
+    - ./config/project.env
+  external-sim:
+    build: ./web/tools/external-sim
+    environment:
+      SIM_NAME: payment-gateway
+      SIM_ROUTE: /charge
+      SIM_DELAY_MS: 2000-8000
+      SIM_REJECT_SHARE: '0.2'
+      SIM_ERROR_SHARE: '0.05'
+      SIM_REJECT_REASONS: payment declined
+      SIM_SEED: ${SIM_SEED:-}
+      SIM_STATE_FILE: /data/state.jsonl
+    volumes:
+    - simdata:/data
+    ports:
+    - ${SIM_PORT:-8090}:8000
+    restart: unless-stopped
+    env_file:
+    - ./config/project.env
+    profiles:
+    - async
+  redis:
+    image: redis:8.10.2
+    ports:
+    - ${REDIS_PORT:-6379}:6379
+    profiles:
+    - extras
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command:
+    - start-dev
+    - --import-realm
+    - --http-port=8180
+    - --hostname=http://localhost:8180
+    - --hostname-backchannel-dynamic=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+    - ./web/configs/keycloak:/opt/keycloak/data/import:ro
+    ports:
+    - 8180:8180
+    profiles:
+    - extras
+  flags:
+    image: ghcr.io/open-feature/flagd:v0.18.0
+    command:
+    - start
+    - --uri
+    - file:/etc/flagd/flags.json
+    volumes:
+    - ./web/configs/flags:/etc/flagd:ro
+    ports:
+    - ${FLAGS_PORT:-8099}:8016
+    restart: unless-stopped
+    profiles:
+    - extras
+  otel-collector:
+    image: otel/opentelemetry-collector:0.163.1
+    volumes:
+    - ./web/configs/otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    profiles:
+    - monitoring
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    ports:
+    - ${JAEGER_PORT:-16686}:16686
+    profiles:
+    - monitoring
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    volumes:
+    - ./web/configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+    - ${PROMETHEUS_PORT:-9090}:9090
+    profiles:
+    - monitoring
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+    - ./web/configs/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./web/configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+    - ${GRAFANA_PORT:-3000}:3000
+    profiles:
+    - monitoring
+  api:
+    build: ./dpc/api
+    image: project-dpc-api:${DPC_APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      CLIENT_ORIGIN: ${DPC_CLIENT_ORIGIN:-http://localhost:8083}
+      RAY_ADDRESS: ray://ray-head:10001
+      RUNNER_URL: http://spark-runner:8000
+      KAFKA_BOOTSTRAP: broker:9092
+      ETCD_URL: http://etcd:2379
+      QUEUE_CAPACITY: ${QUEUE_CAPACITY:-50}
+      WORKERS: ${WORKERS:-4}
+      RESOURCE_MODE: ${RESOURCE_MODE:-locked}
+      EXECUTION: ${EXECUTION:-local}
+      IN_FLIGHT_LIMIT: ${IN_FLIGHT_LIMIT:-8}
+      RECEIVER_DELAY_MS: ${RECEIVER_DELAY_MS:-0}
+      FENCING: ${FENCING:-on}
+      FAULTS: 'on'
+      INSTANCE: api
+      WEB_API_URL: http://nginx
+    volumes:
+    - data:/data
+    - faults:/faults
+    restart: unless-stopped
+    ports:
+    - ${API_PORT:-8000}:8000
+    cap_add:
+    - SYS_PTRACE
+    stop_grace_period: 120s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+    - ./config/project.env
+  ray-head:
+    build: ./dpc/api
+    image: project-dpc-api:${DPC_APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      CLIENT_ORIGIN: ${DPC_CLIENT_ORIGIN:-http://localhost:8083}
+      RAY_ADDRESS: ray://ray-head:10001
+      RUNNER_URL: http://spark-runner:8000
+      KAFKA_BOOTSTRAP: broker:9092
+      ETCD_URL: http://etcd:2379
+      QUEUE_CAPACITY: ${QUEUE_CAPACITY:-50}
+      WORKERS: ${WORKERS:-4}
+      RESOURCE_MODE: ${RESOURCE_MODE:-locked}
+      EXECUTION: ${EXECUTION:-local}
+      IN_FLIGHT_LIMIT: ${IN_FLIGHT_LIMIT:-8}
+      RECEIVER_DELAY_MS: ${RECEIVER_DELAY_MS:-0}
+      FENCING: ${FENCING:-on}
+      FAULTS: 'on'
+      INSTANCE: ray-head
+    volumes:
+    - data:/data
+    - faults:/faults
+    restart: unless-stopped
+    command:
+    - ray
+    - start
+    - --head
+    - --port=6379
+    - --ray-client-server-port=10001
+    - --dashboard-host=0.0.0.0
+    - --num-cpus=1
+    - --metrics-export-port=8080
+    - --block
+    ports:
+    - ${RAY_DASHBOARD_PORT:-8265}:8265
+    shm_size: 1g
+    env_file:
+    - ./config/project.env
+    profiles:
+    - ray
+  ray-worker:
+    build: ./dpc/api
+    image: project-dpc-api:${DPC_APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      CLIENT_ORIGIN: ${DPC_CLIENT_ORIGIN:-http://localhost:8083}
+      RAY_ADDRESS: ray://ray-head:10001
+      RUNNER_URL: http://spark-runner:8000
+      KAFKA_BOOTSTRAP: broker:9092
+      ETCD_URL: http://etcd:2379
+      QUEUE_CAPACITY: ${QUEUE_CAPACITY:-50}
+      WORKERS: ${WORKERS:-4}
+      RESOURCE_MODE: ${RESOURCE_MODE:-locked}
+      EXECUTION: ${EXECUTION:-local}
+      IN_FLIGHT_LIMIT: ${IN_FLIGHT_LIMIT:-8}
+      RECEIVER_DELAY_MS: ${RECEIVER_DELAY_MS:-0}
+      FENCING: ${FENCING:-on}
+      FAULTS: 'on'
+      INSTANCE: ray-worker
+    volumes:
+    - data:/data
+    - faults:/faults
+    restart: unless-stopped
+    shm_size: 1g
+    depends_on:
+    - ray-head
+    command:
+    - ray
+    - start
+    - --address=ray-head:6379
+    - --num-cpus=2
+    - --block
+    deploy:
+      replicas: 2
+    env_file:
+    - ./config/project.env
+    profiles:
+    - ray
+  ray-worker-extra:
+    build: ./dpc/api
+    image: project-dpc-api:${DPC_APP_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      CLIENT_ORIGIN: ${DPC_CLIENT_ORIGIN:-http://localhost:8083}
+      RAY_ADDRESS: ray://ray-head:10001
+      RUNNER_URL: http://spark-runner:8000
+      KAFKA_BOOTSTRAP: broker:9092
+      ETCD_URL: http://etcd:2379
+      QUEUE_CAPACITY: ${QUEUE_CAPACITY:-50}
+      WORKERS: ${WORKERS:-4}
+      RESOURCE_MODE: ${RESOURCE_MODE:-locked}
+      EXECUTION: ${EXECUTION:-local}
+      IN_FLIGHT_LIMIT: ${IN_FLIGHT_LIMIT:-8}
+      RECEIVER_DELAY_MS: ${RECEIVER_DELAY_MS:-0}
+      FENCING: ${FENCING:-on}
+      FAULTS: 'on'
+      INSTANCE: ray-worker-extra
+    volumes:
+    - data:/data
+    - faults:/faults
+    restart: unless-stopped
+    shm_size: 1g
+    depends_on:
+    - ray-head
+    command:
+    - ray
+    - start
+    - --address=ray-head:6379
+    - --num-cpus=2
+    - '--resources={"extra": 1}'
+    - --block
+    env_file:
+    - ./config/project.env
+    profiles:
+    - ray
+  spark-master:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - spark-class
+    - org.apache.spark.deploy.master.Master
+    - --host
+    - spark-master
+    ports:
+    - ${SPARK_MASTER_UI_PORT:-8280}:8080
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  spark-worker-1:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - spark-class
+    - org.apache.spark.deploy.worker.Worker
+    - spark://spark-master:7077
+    - --cores
+    - '2'
+    - --memory
+    - 2g
+    depends_on:
+    - spark-master
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  spark-worker-2:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - spark-class
+    - org.apache.spark.deploy.worker.Worker
+    - spark://spark-master:7077
+    - --cores
+    - '2'
+    - --memory
+    - 2g
+    depends_on:
+    - spark-master
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  spark-runner:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - python
+    - /runner/runner.py
+    ports:
+    - ${SPARK_JOB_UI_PORT:-4040}:4040
+    depends_on:
+    - spark-master
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  spark-history:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - sh
+    - -c
+    - mkdir -p /data/spark-events && exec spark-class org.apache.spark.deploy.history.HistoryServer
+    ports:
+    - ${SPARK_HISTORY_PORT:-18080}:18080
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  stream:
+    build:
+      context: ./dpc
+      dockerfile: spark/Dockerfile
+    image: project-dpc-spark:${DPC_APP_TAG:-dev}
+    environment:
+      SPARK_CONF_DIR: /opt/spark-conf
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      KAFKA_BOOTSTRAP: broker:9092
+      SPARK_AQE: ${SPARK_AQE:-on}
+      BROADCAST_THRESHOLD: ${BROADCAST_THRESHOLD:-10m}
+      WATERMARK_MINUTES: ${WATERMARK_MINUTES:-10}
+    volumes:
+    - data:/data
+    - ./dpc/spark/jobs:/jobs:ro
+    - ./dpc/configs/spark/spark-defaults.conf:/opt/spark-conf/spark-defaults.conf:ro
+    restart: unless-stopped
+    command:
+    - sh
+    - -c
+    - mkdir -p /data/spark-events && exec spark-submit --master spark://spark-master:7077 --conf spark.ui.port=4041
+      --conf spark.cores.max=2 --conf spark.executor.memory=1g /jobs/stream.py
+    ports:
+    - ${SPARK_STREAM_UI_PORT:-4041}:4041
+    depends_on:
+      broker-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      spark-master:
+        condition: service_started
+    env_file:
+    - ./config/project.env
+    profiles:
+    - spark
+  etcd:
+    image: quay.io/coreos/etcd:v3.7.2
+    command:
+    - etcd
+    - --name=etcd
+    - --listen-client-urls=http://0.0.0.0:2379
+    - --advertise-client-urls=http://etcd:2379
+    - --data-dir=/etcd-data
+    ports:
+    - ${ETCD_PORT:-2379}:2379
+    profiles:
+    - coordination
+  coordinator-a:
+    build: ./dpc/coordinator
+    image: project-dpc-coordinator:${DPC_APP_TAG:-dev}
+    environment:
+      ETCD_URL: http://etcd:2379
+      API_URL: http://api:8000
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      LEASE_TTL_S: ${LEASE_TTL_S:-5}
+      FAULTS: 'on'
+      INSTANCE: coordinator-a
+    volumes:
+    - faults:/faults
+    depends_on:
+    - etcd
+    - api
+    restart: unless-stopped
+    profiles:
+    - coordination
+  coordinator-b:
+    build: ./dpc/coordinator
+    image: project-dpc-coordinator:${DPC_APP_TAG:-dev}
+    environment:
+      ETCD_URL: http://etcd:2379
+      API_URL: http://api:8000
+      API_TOKEN: ${API_TOKEN:-dev-token}
+      LEASE_TTL_S: ${LEASE_TTL_S:-5}
+      FAULTS: 'on'
+      INSTANCE: coordinator-b
+    volumes:
+    - faults:/faults
+    depends_on:
+    - etcd
+    - api
+    restart: unless-stopped
+    profiles:
+    - coordination
+  dpc-prometheus:
+    image: prom/prometheus:v3.15.0
+    volumes:
+    - ./dpc/configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+    - ${DPC_PROMETHEUS_PORT:-9091}:9090
+    profiles:
+    - monitoring
+  dpc-grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+    - ./dpc/configs/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./dpc/configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+    - ${DPC_GRAFANA_PORT:-3001}:3000
+    profiles:
+    - monitoring
+volumes:
+  pgdata: null
+  kafkadata: null
+  faults: null
+  simdata: null
+  data: null

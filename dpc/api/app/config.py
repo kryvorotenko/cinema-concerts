@@ -24,8 +24,12 @@ CLIENT_ORIGIN = os.environ.get("CLIENT_ORIGIN", "http://localhost:8083")
 
 RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray://localhost:10001")
 RUNNER_URL = os.environ.get("RUNNER_URL", "http://localhost:8000")
-KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9095")
-EVENTS_TOPIC = os.environ.get("EVENTS_TOPIC", "events")
+KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9094")
+TOPIC_DOMAIN_EVENTS = os.environ.get("TOPIC_DOMAIN_EVENTS", "domain-events")
+TOPIC_NOTIFICATIONS = os.environ.get("TOPIC_NOTIFICATIONS", "notifications")
+TOPIC_TICKET_TELEMETRY = os.environ.get("TOPIC_TICKET_TELEMETRY", "ticket-telemetry")
+EVENTS_TOPIC = os.environ.get("EVENTS_TOPIC", TOPIC_TICKET_TELEMETRY)
+WEB_API_URL = os.environ.get("WEB_API_URL", "http://localhost:8080")
 ETCD_URL = os.environ.get("ETCD_URL", "http://localhost:2379")
 
 # experiment modes: what each value changes is yours to write

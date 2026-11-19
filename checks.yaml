@@ -11,9 +11,9 @@ dpc:
   base: http://localhost:8000
   items: []
   services:
-    postgres: dpc-postgres
-    migrate: dpc-migrate
-    kafka-ui: dpc-kafka-ui
+    postgres: postgres
+    migrate: migrate
+    kafka-ui: kafka-ui
     prometheus: dpc-prometheus
     grafana: dpc-grafana
 

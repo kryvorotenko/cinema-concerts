@@ -40,7 +40,7 @@ def main() -> None:
     events = (
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", os.environ.get("KAFKA_BOOTSTRAP", "kafka:9092"))
-        .option("subscribe", os.environ.get("EVENTS_TOPIC", "events"))
+        .option("subscribe", os.environ.get("EVENTS_TOPIC", "ticket-telemetry"))
         .option("startingOffsets", "earliest")
         .load()
         .select(F.from_json(F.col("value").cast("string"), SCHEMA).alias("e"))

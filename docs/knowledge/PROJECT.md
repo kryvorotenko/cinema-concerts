@@ -4,8 +4,8 @@
 
 **Web = продажа билетов. DPC = вход по билетам, аналитика и распределитель очереди ожидания.**
 Общие идентификаторы по DPC C01 §6: `performance_id`, `ticket_id`.
-В Web таблица события названа `event`; соответствие `event.id` ↔ `performance_id`
-нужно явно закрепить в контракте, а не создать две независимые сущности.
+В общей схеме `events` — программа, `screenings` — конкретное выполнение;
+**`screenings.id` = `performance_id`**.
 PostgreSQL и Kafka могут быть общими. Общая БД не разрешает дважды выполнять
 одну операцию. Каждый переход состояния имеет одного владельца.
 
@@ -94,7 +94,7 @@ Domain events: `hold.created`, `payment.requested`, `payment.succeeded`,
 - История Parquet: `scan_id, performance_id, gate, sector_id, event_time, accepted`.
 - Справочник событий: название, площадка, хедлайнер.
 - Spark batch: **проходы и медиана времени прихода по событиям и воротам**; горячий концерт **60% строк**.
-- Kafka topic **`scans`**; событие `event_id, performance_id, ticket_id, gate, sector_id, accepted, event_time`.
+- Kafka topic **`ticket-telemetry`** — принятое пользователем имя для `scans` из карточки; событие `event_id, performance_id, ticket_id, gate, sector_id, accepted, event_time`.
 - Stream: **фиксированное окно 1 минута**, ключ **gate**, число **accepted=true**.
 - Буфер ворот может опоздать до **10 минут**; это пример задержки, не автоматически выбранный watermark.
 - Координатор: распределитель возвращённых мест очереди ожидания; защищённый эффект — назначение резерва покупателю.
@@ -129,11 +129,8 @@ HTTP-идемпотентность, дедупликация брокера/п�
 
 ## Текущий каркас и целевая организация
 
-Сейчас: `web/`, `dpc/`, общий include-Compose, два Postgres и два Kafka,
-переименованные конфликтные инфраструктурные сервисы DPC, библиотечные примеры.
-Ни одна ЛР не объявлена выполненной. Эта задача меняет только документацию памяти.
-
-Согласованный ориентир организации: `web/`, `dpc/`, общие `migrations/`,
-`experiments/`, `results/`, корневые compose/checks/.env.example/README.
-Общие миграции и объединение инфраструктуры пока не реализованы.
+На 2026-11-19: `web/`, `dpc/`, один корневой `docker-compose.yml`, одна БД,
+один Kafka, общая миграция `migrations/001_shared_foundation.sql`, `experiments/`,
+`results/` и `config/project.env`. Подробности — `docs/contracts/README.md`.
+Ни одна ЛР не объявлена выполненной.
 Пример одногруппников carsharing-c08 — образец организации, не требования C01.

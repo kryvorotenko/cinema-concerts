@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "C01 admission event (topic ticket-telemetry)",
+  "type": "object",
+  "required": ["event_id", "performance_id", "ticket_id", "gate", "sector_id", "accepted", "event_time"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "performance_id": {"type": "string", "minLength": 1},
+    "ticket_id": {"type": "string", "minLength": 1},
+    "gate": {"type": "string", "minLength": 1},
+    "sector_id": {"type": "string", "minLength": 1},
+    "accepted": {"type": "boolean"},
+    "event_time": {"type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"}
+  },
+  "additionalProperties": true,
+  "examples": [{"event_id": "evt-001", "performance_id": "screening-001", "ticket_id": "ticket-001", "gate": "gate-a", "sector_id": "sector-a", "accepted": true, "event_time": "2026-11-19T18:00:00.000Z"}]
+}
