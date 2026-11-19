@@ -23,7 +23,7 @@ flowchart LR
     D --> R[Приёмник: погашение ticket_id + заполненность сектора]
     R --> PG
     P[Parquet + справочник] --> S[Spark batch + независимый эталон]
-    K[Kafka scans] --> SS[Spark stream → панель]
+    K[Kafka ticket-telemetry] --> SS[Spark stream → панель]
     E[etcd → два координатора] --> F[Назначение резерва из очереди ожидания с fencing]
     F --> PG
 ```

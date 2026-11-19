@@ -1,3 +1,5 @@
+> **Довідка з оригінального курсу.** Спільний C01 використовує [кореневий запуск](../../README.md) та [контракт команди](../../docs/contracts/README.md). Нижче можуть згадуватися автономні Compose, порти, бібліотечні приклади й міграції; вони не є налаштуваннями спільного проєкту.
+
 # Каркас сервісу `api` (приклад на Python 3.14, FastAPI)
 
 Той самий образ запускає `api`, `ray-head`, `ray-worker` і `ray-worker-extra`. Версії Python і
@@ -20,7 +22,7 @@ Ray у клієнті й кластері мають збігатися, а ви
 
 ```sh
 uv sync
-DATABASE_URL=postgresql://app:app@localhost:5433/app uv run uvicorn app.main:app --reload
+DATABASE_URL=postgresql://app:app@localhost:5432/app uv run uvicorn app.main:app --reload
 ```
 
 На Windows цей спосіб не підключається до бази, бо асинхронний драйвер psycopg не працює зі

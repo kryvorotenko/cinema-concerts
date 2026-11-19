@@ -16,6 +16,7 @@
 | [TEAM.md](TEAM.md) | Договорённое распределение на четырёх человек и зависимости |
 | [DECISIONS.md](DECISIONS.md) | Расхождения присланного плана с методичками и нерешённые вопросы |
 | [DELIVERY.md](DELIVERY.md) | Требования к README, запуску, экспериментам и защите |
+| [TEAM-WORKFLOW.md](../TEAM-WORKFLOW.md) | Начало работы участника и агента, зоны, гілки й миграции |
 | [requirements.json](requirements.json) | Точный текст каждого О/Д, курс, лабораторная, признак ядра, страница |
 | [sources/manifest.json](sources/manifest.json) | Исходные файлы, SHA-256, число страниц и способ извлечения |
 | [sources/web-guide.txt](sources/web-guide.txt) | Полный извлечённый Web-текст с маркерами страниц |
