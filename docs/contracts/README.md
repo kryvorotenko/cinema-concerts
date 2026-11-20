@@ -38,6 +38,10 @@ fencing_token в bookings зарезервовано за запитом ком�
 
 ## Kafka
 
+DPC ЛР1 додала `migrations/002_dpc_scans.sql`, HTTP API та окремий контракт
+[DPC-LR1.md](DPC-LR1.md). Web ticket API іще очікує реалізацію учасника 1;
+саме він підтвердить формат сервісної відповіді.
+
 | Топік | Константа | Ключ повідомлення | Призначення |
 |---|---|---|---|
 | domain-events | TOPIC_DOMAIN_EVENTS | aggregate_id | Web ЛР4: hold.created/payment.requested/payment.succeeded/payment.failed/event.rescheduled |

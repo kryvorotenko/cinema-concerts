@@ -517,6 +517,11 @@ services:
       FAULTS: 'on'
       INSTANCE: api
       WEB_API_URL: http://nginx
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
+      TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
+      TICKET_CHECK_TIMEOUT_S: ${TICKET_CHECK_TIMEOUT_S:-2}
+      TICKET_CHECK_MIN_MS: ${TICKET_CHECK_MIN_MS:-100}
+      TICKET_CHECK_MAX_MS: ${TICKET_CHECK_MAX_MS:-500}
     volumes:
     - data:/data
     - faults:/faults

@@ -30,6 +30,11 @@ TOPIC_NOTIFICATIONS = os.environ.get("TOPIC_NOTIFICATIONS", "notifications")
 TOPIC_TICKET_TELEMETRY = os.environ.get("TOPIC_TICKET_TELEMETRY", "ticket-telemetry")
 EVENTS_TOPIC = os.environ.get("EVENTS_TOPIC", TOPIC_TICKET_TELEMETRY)
 WEB_API_URL = os.environ.get("WEB_API_URL", "http://localhost:8080")
+WEB_API_TOKEN = os.environ.get("WEB_API_TOKEN", API_TOKEN)
+TICKET_CHECK_MODE = os.environ.get("TICKET_CHECK_MODE", "web")  # web | fixture
+TICKET_CHECK_TIMEOUT_S = _float("TICKET_CHECK_TIMEOUT_S", 2.0)
+TICKET_CHECK_MIN_MS = _int("TICKET_CHECK_MIN_MS", 100)
+TICKET_CHECK_MAX_MS = _int("TICKET_CHECK_MAX_MS", 500)
 ETCD_URL = os.environ.get("ETCD_URL", "http://localhost:2379")
 
 # experiment modes: what each value changes is yours to write

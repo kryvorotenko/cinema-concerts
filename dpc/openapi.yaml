@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: C01 DPC admission API
+  version: 0.1.0
+  description: DPC LR1 admission routes. Other laboratories remain planned.
+servers:
+  - url: http://localhost:8000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ScanInput:
+      type: object
+      required: [scan_id, ticket_id, ticket_code, gate, sector_id, event_time]
+      properties:
+        scan_id: {type: string, minLength: 1}
+        ticket_id: {type: string, minLength: 1}
+        ticket_code: {type: string, minLength: 1}
+        gate: {type: string, minLength: 1}
+        sector_id: {type: string, minLength: 1}
+        event_time: {type: string, format: date-time}
+    Problem:
+      type: object
+      required: [type, title, status, instance]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+paths:
+  /health:
+    get:
+      responses:
+        '200': {description: Process is alive}
+  /metrics:
+    get:
+      responses:
+        '200': {description: Runtime counters and HTTP latency summary}
+  /v1/scans:
+    post:
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScanInput'}
+      responses:
+        '202': {description: Accepted into bounded queue}
+        '400': {description: Invalid input}
+        '401': {description: Bearer token missing or invalid}
+        '409': {description: scan_id reused with different content}
+        '429': {description: Queue full, Retry-After header set}
+        '503': {description: Service draining}
+  /v1/scans/{scan_id}:
+    get:
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: scan_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200': {description: State and decision of a scan}
+        '404': {description: Scan not found}
+  /v1/sector/{sector_id}:
+    get:
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: sector_id
+          required: true
+          schema: {type: string}
+      responses:
+        '200': {description: Sector capacity and inside count}
+        '404': {description: Sector not found}

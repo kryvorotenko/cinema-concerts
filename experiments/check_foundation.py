@@ -41,7 +41,8 @@ def main():
         assert env['TOPIC_TICKET_TELEMETRY'] == 'ticket-telemetry'
     assert 'kafka' in services['broker']['networks']['default']['aliases']
     migrations = list((ROOT/'migrations').glob('[0-9][0-9][0-9]_*.sql'))
-    assert len(migrations) == 1, 'Day-one baseline must be one migration'
+    numbers = [p.name[:3] for p in migrations]
+    assert '001' in numbers and len(numbers) == len(set(numbers)), 'Migration numbers must be unique and retain baseline'
     assert any(v.get('target') == '/migrations' and Path(v['source']) == ROOT/'migrations'
                for v in services['migrate']['volumes'])
     schema = json.loads((ROOT/'docs/contracts/ticket-telemetry.schema.json').read_text())
