@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import config, db, middleware, problems, service
+from . import reports
 from .jsonlog import log
 
 
@@ -47,4 +48,5 @@ app.add_middleware(
 )
 problems.install(app)
 app.include_router(service.router)
+app.include_router(reports.router)
 # app.include_router(your_module.router)
