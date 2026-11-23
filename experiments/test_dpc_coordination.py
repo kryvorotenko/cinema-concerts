@@ -1,5 +1,6 @@
 """Live O6.1/O6.2: two leaders, lease failover, fenced assignments."""
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -37,6 +38,8 @@ def wait_until(predicate, timeout=20):
 
 
 def main():
+    failover_mode = os.getenv("FAILOVER_MODE", "stop")
+    assert failover_mode in ("stop", "pause")
     prefix = "dpc-test-" + str(uuid.uuid4())
     seed_buyers(prefix)
     with httpx.Client(base_url=BASE, timeout=5) as client:
@@ -77,12 +80,12 @@ def main():
         assert first_assignment["generation"] == first["generation"]
 
         old = first["owner"]
-        docker("pause", old)
-        paused_at = time.monotonic()
+        docker(failover_mode, old)
+        owner_down_at = time.monotonic()
         try:
             second = wait_until(lambda: (s if s["owner"] != old and s["generation"] > first["generation"] else None)
                                 if (s := status()) else None, timeout=20)
-            failover_s = time.monotonic() - paused_at
+            failover_s = time.monotonic() - owner_down_at
             stale = client.post("/internal/coordinator/assign", headers=COORD, json={
                 "owner": old, "generation": first["generation"],
                 "assignment_id": f"{prefix}-stale", "web_reserve_id": f"{prefix}-missing",
@@ -105,7 +108,10 @@ def main():
                 "web_reserve_id": reserve2, "waitlist_id": wait2})
             assert replay.status_code == 200 and replay.json()["replayed"] is True, replay.text
         finally:
-            docker("unpause", old)
+            if failover_mode == "stop":
+                docker("up", "-d", "--no-deps", old)
+            else:
+                docker("unpause", old)
 
         time.sleep(2)
         history = client.get("/v1/history", headers=CLIENT).json()["items"]
@@ -114,7 +120,8 @@ def main():
         assert not [x for x in history if x["id"] > new_register_id and x["kind"] == "assigned"
                     and x["generation"] < second["generation"]], history
         assert len([x for x in history if x["kind"] == "assigned" and x["web_reserve_id"] in (reserve1,reserve2)]) == 2
-        print(json.dumps({"first": first, "second": second, "failover_s": round(failover_s, 3),
+        print(json.dumps({"failover_mode": failover_mode, "first": first, "second": second,
+                          "failover_s": round(failover_s, 3),
                           "first_assignment": first_assignment["generation"],
                           "second_assignment": second_assignment["generation"],
                           "stale_status": stale.status_code,

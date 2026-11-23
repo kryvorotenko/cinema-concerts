@@ -125,7 +125,7 @@ PowerShell: `Copy-Item .env.example .env`. Загальний запуск об�
 `docker compose up -d --build`. Spark: `docker compose --profile spark up -d --build`;
 Ray/координатори/async аналогічно з їхніми профілями. Усі компоненти:
 `docker compose --profile '*' up -d --build` (потребує значно більше RAM).
-Предметні API DPC ЛР1/2 описані в окремих контрактах; інші API ще TODO.
+Предметні API DPC ЛР1/2/3/6 описані в окремих контрактах; ЛР4/5 ще TODO.
 
 Правило міграцій: 001 після спільного старту не редагувати, нові номери узгоджувати.
 Не запускати окремо колишні web/dpc Compose поверх спільної БД.
