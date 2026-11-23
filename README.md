@@ -28,7 +28,7 @@ python experiments/check_foundation.py
 |---|---|
 | `docker-compose.yml` | Єдиний запуск, порти, спільні PostgreSQL і Kafka |
 | `.env.example`, `config/project.env` | Параметри й спільні константи |
-| `migrations/001_shared_foundation.sql`, `002_dpc_scans.sql` | Спільна схема та життєвий цикл DPC scans |
+| `migrations/001_shared_foundation.sql`, `010_dpc_scans.sql` | Спільна схема та життєвий цикл DPC scans |
 | `web/`, `dpc/` | Компоненти відповідних курсів |
 | `experiments/`, `results/` | Сценарії перевірки й майбутні результати |
 | `docs/contracts/` | Контракт команди: таблиці, топіки, порти й запуск |
