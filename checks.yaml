@@ -1,4 +1,4 @@
-# Web remains a scaffold; DPC LR1 contract is implemented and locally exercised.
+# Web remains a scaffold; DPC LR1 and LR2 contracts are locally exercised.
 web:
   openapi: web/openapi.example.yaml
   base: http://localhost:8080

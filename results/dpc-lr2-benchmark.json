@@ -1,0 +1,87 @@
+{
+  "n": 5000000,
+  "a": 0,
+  "b": 90,
+  "method": "midpoint",
+  "order": 2,
+  "tolerance_abs": 0.02,
+  "baseline_chunks_per_worker": 4,
+  "baseline": {
+    "1": {
+      "samples_s": [
+        1.4306,
+        1.3914,
+        1.3407
+      ],
+      "median_s": 1.3913732580000016,
+      "spread_s": 0.089915941000001,
+      "error": 1.775333657860756e-09,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    "2": {
+      "samples_s": [
+        0.8442,
+        0.903,
+        0.9391
+      ],
+      "median_s": 0.902956789000001,
+      "spread_s": 0.09496016700001064,
+      "error": 1.775333657860756e-09,
+      "speedup": 1.5409079093816969,
+      "efficiency": 0.7704539546908484
+    },
+    "4": {
+      "samples_s": [
+        0.6618,
+        0.6733,
+        0.6786
+      ],
+      "median_s": 0.6732753189999983,
+      "spread_s": 0.016811728999996944,
+      "error": 1.775333657860756e-09,
+      "speedup": 2.0665739835325896,
+      "efficiency": 0.5166434958831474
+    }
+  },
+  "changed_chunks_per_worker": 1,
+  "changed": {
+    "1": {
+      "samples_s": [
+        1.3932,
+        1.3586,
+        1.4203
+      ],
+      "median_s": 1.3931698859999955,
+      "spread_s": 0.06175322699999697,
+      "error": 1.775333657860756e-09,
+      "speedup": 1.0,
+      "efficiency": 1.0
+    },
+    "2": {
+      "samples_s": [
+        0.8913,
+        0.9483,
+        0.8969
+      ],
+      "median_s": 0.8968554030000035,
+      "spread_s": 0.05697015100001579,
+      "error": 1.775333657860756e-09,
+      "speedup": 1.5533940937856958,
+      "efficiency": 0.7766970468928479
+    },
+    "4": {
+      "samples_s": [
+        0.6746,
+        0.7172,
+        0.6919
+      ],
+      "median_s": 0.6919352419999996,
+      "spread_s": 0.04255159500000616,
+      "error": 1.775333657860756e-09,
+      "speedup": 2.0134396998960726,
+      "efficiency": 0.5033599249740182
+    }
+  },
+  "profile": "         7145 function calls (6971 primitive calls) in 0.699 seconds\n\n   Ordered by: cumulative time\n   List reduced from 297 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.000    0.000    0.699    0.699 /srv/app/compute.py:41(calculate)\n        1    0.000    0.000    0.698    0.698 /usr/local/lib/python3.14/concurrent/futures/_base.py:672(__exit__)\n        1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/concurrent/futures/process.py:956(shutdown)\n      2/1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/threading.py:1097(join)\n      2/1    0.000    0.000    0.697    0.697 {method 'join' of '_thread._ThreadHandle' objects}\n      2/1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/threading.py:1030(_bootstrap)\n      2/1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/threading.py:1065(_bootstrap_inner)\n      2/1    0.000    0.000    0.697    0.697 {method 'run' of '_contextvars.Context' objects}\n        1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/concurrent/futures/process.py:354(run)\n        1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/concurrent/futures/process.py:645(join_executor_internals)\n        1    0.000    0.000    0.697    0.697 /usr/local/lib/python3.14/concurrent/futures/process.py:649(_join_executor_internals)\n       11    0.000    0.000    0.619    0.056 /usr/local/lib/python3.14/multiprocessing/util.py:276(__call__)\n\n\n"
+}

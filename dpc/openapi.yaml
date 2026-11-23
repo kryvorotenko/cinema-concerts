@@ -21,6 +21,17 @@ components:
         gate: {type: string, minLength: 1}
         sector_id: {type: string, minLength: 1}
         event_time: {type: string, format: date-time}
+    ComputeInput:
+      type: object
+      required: [a, b, n, workers, method, order]
+      properties:
+        a: {type: number, minimum: 0, maximum: 90}
+        b: {type: number, exclusiveMinimum: 0, maximum: 90}
+        n: {type: integer, minimum: 1, maximum: 20000000}
+        workers: {type: integer, minimum: 1, maximum: 4}
+        method: {type: string, enum: [midpoint, simpson]}
+        order: {type: integer, enum: [2, 4]}
+        chunks_per_worker: {type: integer, minimum: 1, maximum: 16, default: 1}
     Problem:
       type: object
       required: [type, title, status, instance]
@@ -31,6 +42,20 @@ components:
         detail: {type: string}
         instance: {type: string}
 paths:
+  /v1/compute:
+    post:
+      security: [{bearerAuth: []}]
+      description: Integrate C01 arrivals using CPU child processes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputeInput'}
+      responses:
+        '200': {description: Numerical value, analytic reference, error, elapsed time and worker count}
+        '400': {description: Invalid interval or method/order pair}
+        '401': {description: Bearer token required}
+        '503': {description: Process pool unavailable}
   /health:
     get:
       responses:

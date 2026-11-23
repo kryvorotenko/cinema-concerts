@@ -64,4 +64,6 @@
 
 На 2026-11-20 участник 3 реализовал DPC ЛР1 на локальных fixtures; Web ticket API
 ещё не готов, поэтому сквозная интеграция остаётся зависимостью. Результаты и
-команды — `results/dpc-lr1.md` и `docs/contracts/DPC-LR1.md`.
+команды — `results/dpc-lr1.md` и `docs/contracts/DPC-LR1.md`. На 2026-11-23
+участник 3 также завершил ядро DPC ЛР2 в отдельной ветке `illia-dpc-lab2`;
+воспроизведение — `results/dpc-lr2.md`.

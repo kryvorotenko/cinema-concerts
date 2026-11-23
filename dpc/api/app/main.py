@@ -1,10 +1,9 @@
 """The `api` process: `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
 Where each lab plugs in (item numbers of the guide):
-  TODO (O1.1-O1.5, D1.4) the receiver route of your card (202), the bounded queue and
-                    the worker pool started in `lifespan`, the shared resource and its lock, the
-                    time log; metrics.gauge("queue_length", ...) for /metrics (O1.5)
-  TODO (O2.1-O2.4, D2.5, D2.6)  POST /v1/compute and its state, the parallel computation, cancel
+  DONE (O1.1-O1.4) the scan queue, worker pool and protected sector effect.
+  DONE (O2.1/O2.3/O2.4) POST /v1/compute and reproducible process experiments.
+  TODO (O1.5, D1.4; O2.2, D2.1-D2.6) optional extensions are not selected.
   TODO (O3.1-O3.4, D3.3, D3.4)  Ray tasks (this image also runs ray-head and ray-worker), the effect
                     table and fault("after_effect_before_ack")
   TODO (O4.2)       POST /v1/reports/main/refresh calls the given Spark runner (RUNNER_URL)
@@ -19,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config, db, middleware, problems, service, scans
+from . import compute, config, db, middleware, problems, service, scans
 from .jsonlog import log
 
 
@@ -48,3 +47,4 @@ app.add_middleware(
 problems.install(app)
 app.include_router(service.router)
 app.include_router(scans.router)
+app.include_router(compute.router)
