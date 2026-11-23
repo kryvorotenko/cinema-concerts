@@ -20,9 +20,11 @@ POOL_TIMEOUT_S = _float("POOL_TIMEOUT_S", 2.0)
 STATEMENT_TIMEOUT_MS = _int("STATEMENT_TIMEOUT_MS", 5000)
 
 API_TOKEN = os.environ.get("API_TOKEN", "dev-token")
+RECEIVER_TOKEN = os.environ.get("RECEIVER_TOKEN", "dev-receiver-token")
 CLIENT_ORIGIN = os.environ.get("CLIENT_ORIGIN", "http://localhost:8083")
 
 RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray://localhost:10001")
+RECEIVER_URL = os.environ.get("RECEIVER_URL", "http://localhost:8000")
 RUNNER_URL = os.environ.get("RUNNER_URL", "http://localhost:8000")
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9094")
 TOPIC_DOMAIN_EVENTS = os.environ.get("TOPIC_DOMAIN_EVENTS", "domain-events")

@@ -516,6 +516,7 @@ services:
       FENCING: ${FENCING:-on}
       FAULTS: 'on'
       INSTANCE: api
+      RECEIVER_TOKEN: ${RECEIVER_TOKEN:-dev-receiver-token}
       WEB_API_URL: http://nginx
       WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
       TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
@@ -556,6 +557,13 @@ services:
       FENCING: ${FENCING:-on}
       FAULTS: 'on'
       INSTANCE: ray-head
+      RECEIVER_TOKEN: ${RECEIVER_TOKEN:-dev-receiver-token}
+      RECEIVER_URL: http://api:8000
+      WEB_API_URL: http://nginx
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
+      TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
+      TICKET_CHECK_MIN_MS: ${TICKET_CHECK_MIN_MS:-100}
+      TICKET_CHECK_MAX_MS: ${TICKET_CHECK_MAX_MS:-500}
     volumes:
     - data:/data
     - faults:/faults
@@ -597,6 +605,13 @@ services:
       FENCING: ${FENCING:-on}
       FAULTS: 'on'
       INSTANCE: ray-worker
+      RECEIVER_TOKEN: ${RECEIVER_TOKEN:-dev-receiver-token}
+      RECEIVER_URL: http://api:8000
+      WEB_API_URL: http://nginx
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
+      TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
+      TICKET_CHECK_MIN_MS: ${TICKET_CHECK_MIN_MS:-100}
+      TICKET_CHECK_MAX_MS: ${TICKET_CHECK_MAX_MS:-500}
     volumes:
     - data:/data
     - faults:/faults
@@ -636,6 +651,13 @@ services:
       FENCING: ${FENCING:-on}
       FAULTS: 'on'
       INSTANCE: ray-worker-extra
+      RECEIVER_TOKEN: ${RECEIVER_TOKEN:-dev-receiver-token}
+      RECEIVER_URL: http://api:8000
+      WEB_API_URL: http://nginx
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
+      TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
+      TICKET_CHECK_MIN_MS: ${TICKET_CHECK_MIN_MS:-100}
+      TICKET_CHECK_MAX_MS: ${TICKET_CHECK_MAX_MS:-500}
     volumes:
     - data:/data
     - faults:/faults

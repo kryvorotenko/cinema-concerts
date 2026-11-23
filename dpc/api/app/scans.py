@@ -6,6 +6,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 
 import httpx
+import ray
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from psycopg.types.json import Jsonb
@@ -31,7 +32,13 @@ class TicketResult(BaseModel):
     valid: bool
 
 
+class AdmissionResult(BaseModel):
+    scan_id: str
+    ticket: TicketResult
+
+
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth.require_token)])
+internal_router = APIRouter(prefix="/internal", dependencies=[Depends(auth.require_receiver_token)], include_in_schema=False)
 
 
 class Runtime:
@@ -50,6 +57,10 @@ class Runtime:
             raise ValueError("TICKET_CHECK_MODE must be web or fixture")
         if config.RESOURCE_MODE == "unprotected" and config.TICKET_CHECK_MODE != "fixture":
             raise ValueError("unsafe mode requires fixture tickets")
+        if config.EXECUTION == "ray":
+            await asyncio.to_thread(ray.init, address=config.RAY_ADDRESS, ignore_reinit_error=True)
+        elif config.EXECUTION != "local":
+            raise ValueError("EXECUTION must be local or ray")
         self.accepting = True
         self.tasks = [asyncio.create_task(self.worker(i)) for i in range(config.WORKERS)]
         metrics.gauge("queue_length", lambda: self.queue.queue.qsize())
@@ -66,13 +77,18 @@ class Runtime:
             with suppress(asyncio.CancelledError):
                 await task
         await self.http.aclose()
+        if config.EXECUTION == "ray":
+            await asyncio.to_thread(ray.shutdown)
 
     async def worker(self, number: int) -> None:
         while True:
             scan_id = await self.queue.queue.get()  # asyncio suspends on an empty queue
             self.busy += 1
             try:
-                await process(scan_id, self.http)
+                if config.EXECUTION == "ray":
+                    await process_ray(scan_id)
+                else:
+                    await process(scan_id, self.http)
             except Exception as exc:
                 log("scan.worker_error", scan_id=scan_id, error=type(exc).__name__, worker=number)
                 try:
@@ -126,7 +142,23 @@ async def process(scan_id: str, client: httpx.AsyncClient) -> None:
     await apply_decision(row, ticket)
 
 
-async def apply_decision(row: dict, ticket: TicketResult) -> None:
+async def process_ray(scan_id: str) -> None:
+    from .ray_tasks import scan_task
+
+    async with db.connection() as conn:
+        async with conn.transaction():
+            row = await (await conn.execute(
+                "UPDATE scans SET state='processing', started_at=now() WHERE id=%s AND state='queued' RETURNING *",
+                (scan_id,),
+            )).fetchone()
+    if row is None:
+        return
+    # Ray receives only validation inputs. It calls the API to accept the result.
+    ref = scan_task.remote({key: row[key] for key in ("id", "ticket_id", "ticket_code")})
+    await asyncio.to_thread(ray.get, ref)
+
+
+async def apply_decision(row: dict, ticket: TicketResult) -> dict:
     async with db.connection() as conn:
         async with conn.transaction():
             # The ticket effect key is stable across distinct scan IDs.
@@ -167,9 +199,21 @@ async def apply_decision(row: dict, ticket: TicketResult) -> None:
                     (row["ticket_id"], row["id"], Jsonb(decision)),
                 )
             await conn.execute(
-                "UPDATE scans SET state=%s, decision=%s, finished_at=now() WHERE id=%s",
+                "UPDATE scans SET state=%s, decision=%s, finished_at=now(), receiver_calls=receiver_calls+1 WHERE id=%s",
                 ("done" if decision["accepted"] else "rejected", Jsonb(decision), row["id"]),
             )
+            return decision
+
+
+@internal_router.post("/admission")
+async def accept_ray_result(payload: AdmissionResult):
+    if config.EXECUTION != "ray":
+        raise Problem(404, "not-found", "Receiver unavailable")
+    async with db.connection() as conn:
+        row = await (await conn.execute("SELECT * FROM scans WHERE id=%s", (payload.scan_id,))).fetchone()
+    if row is None or row["state"] not in ("processing", "done", "rejected"):
+        raise Problem(409, "scan-not-processing", "Scan is not processing")
+    return await apply_decision(row, payload.ticket)
 
 
 @router.post("/scans", status_code=202)

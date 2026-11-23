@@ -4,8 +4,8 @@ Where each lab plugs in (item numbers of the guide):
   DONE (O1.1-O1.4) the scan queue, worker pool and protected sector effect.
   DONE (O2.1/O2.3/O2.4) POST /v1/compute and reproducible process experiments.
   TODO (O1.5, D1.4; O2.2, D2.1-D2.6) optional extensions are not selected.
-  TODO (O3.1-O3.4, D3.3, D3.4)  Ray tasks (this image also runs ray-head and ray-worker), the effect
-                    table and fault("after_effect_before_ack")
+  DONE (O3.1/O3.3/O3.4) Ray tasks, transactional receiver, and worker retry fault.
+  TODO (O3.2, D3.1-D3.4) optional Ray extensions are not selected.
   TODO (O4.2)       POST /v1/reports/main/refresh calls the given Spark runner (RUNNER_URL)
   TODO (O5.x)       GET /v1/panel, /v1/panel/batch: the windows written by your stream job
   TODO (O6.x)       GET /v1/coordinator, /v1/history; coordinators are separate processes
@@ -47,4 +47,5 @@ app.add_middleware(
 problems.install(app)
 app.include_router(service.router)
 app.include_router(scans.router)
+app.include_router(scans.internal_router)
 app.include_router(compute.router)

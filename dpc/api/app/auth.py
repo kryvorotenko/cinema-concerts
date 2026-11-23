@@ -15,3 +15,9 @@ async def require_token(request: Request) -> None:
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not hmac.compare_digest(token.encode(), config.API_TOKEN.encode()):
         raise Problem(401, "unauthorized", "API token required", headers={"WWW-Authenticate": "Bearer"})
+
+
+async def require_receiver_token(request: Request) -> None:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not hmac.compare_digest(token.encode(), config.RECEIVER_TOKEN.encode()):
+        raise Problem(401, "unauthorized", "Receiver token required", headers={"WWW-Authenticate": "Bearer"})

@@ -66,4 +66,5 @@
 ещё не готов, поэтому сквозная интеграция остаётся зависимостью. Результаты и
 команды — `results/dpc-lr1.md` и `docs/contracts/DPC-LR1.md`. На 2026-11-23
 участник 3 также завершил ядро DPC ЛР2 в отдельной ветке `illia-dpc-lab2`;
-воспроизведение — `results/dpc-lr2.md`.
+воспроизведение — `results/dpc-lr2.md`. Ядро DPC ЛР3 реализовано в ветке
+`illia-dpc-lab3`, результат fault/retry — `results/dpc-lr3.md`.
