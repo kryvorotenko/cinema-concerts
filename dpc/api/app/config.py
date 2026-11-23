@@ -21,6 +21,8 @@ STATEMENT_TIMEOUT_MS = _int("STATEMENT_TIMEOUT_MS", 5000)
 
 API_TOKEN = os.environ.get("API_TOKEN", "dev-token")
 RECEIVER_TOKEN = os.environ.get("RECEIVER_TOKEN", "dev-receiver-token")
+COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "dev-coordinator-token")
+WEB_RESERVE_TOKEN = os.environ.get("WEB_RESERVE_TOKEN", "dev-web-reserve-token")
 CLIENT_ORIGIN = os.environ.get("CLIENT_ORIGIN", "http://localhost:8083")
 
 RAY_ADDRESS = os.environ.get("RAY_ADDRESS", "ray://localhost:10001")

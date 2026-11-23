@@ -8,7 +8,8 @@ Where each lab plugs in (item numbers of the guide):
   TODO (O3.2, D3.1-D3.4) optional Ray extensions are not selected.
   TODO (O4.2)       POST /v1/reports/main/refresh calls the given Spark runner (RUNNER_URL)
   TODO (O5.x)       GET /v1/panel, /v1/panel/batch: the windows written by your stream job
-  TODO (O6.x)       GET /v1/coordinator, /v1/history; coordinators are separate processes
+  DONE (O6.1/O6.2) etcd lease leaders, resource generation registry, fenced waitlist assignment.
+  TODO (O6.3, D6.x) optional coordination extensions are not selected.
 Protect your /v1 routers with `dependencies=[Depends(auth.require_token)]`.
 """
 
@@ -18,7 +19,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import compute, config, db, middleware, problems, service, scans
+from . import compute, config, coordination, db, middleware, problems, service, scans
 from .jsonlog import log
 
 
@@ -49,3 +50,6 @@ app.include_router(service.router)
 app.include_router(scans.router)
 app.include_router(scans.internal_router)
 app.include_router(compute.router)
+app.include_router(coordination.router)
+app.include_router(coordination.coordinator_router)
+app.include_router(coordination.web_router)

@@ -67,4 +67,6 @@
 команды — `results/dpc-lr1.md` и `docs/contracts/DPC-LR1.md`. На 2026-11-23
 участник 3 также завершил ядро DPC ЛР2 в отдельной ветке `illia-dpc-lab2`;
 воспроизведение — `results/dpc-lr2.md`. Ядро DPC ЛР3 реализовано в ветке
-`illia-dpc-lab3`, результат fault/retry — `results/dpc-lr3.md`.
+`illia-dpc-lab3`, результат fault/retry — `results/dpc-lr3.md`. Ядро DPC ЛР6
+в ветке `illia-dpc-lab6`: etcd/fencing и fixture Web reserve,
+`results/dpc-lr6.md`. Web handoff остаётся точкой совместной интеграции.

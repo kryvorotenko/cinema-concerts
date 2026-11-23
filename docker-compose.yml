@@ -517,6 +517,8 @@ services:
       FAULTS: 'on'
       INSTANCE: api
       RECEIVER_TOKEN: ${RECEIVER_TOKEN:-dev-receiver-token}
+      COORDINATOR_TOKEN: ${COORDINATOR_TOKEN:-dev-coordinator-token}
+      WEB_RESERVE_TOKEN: ${WEB_RESERVE_TOKEN:-dev-web-reserve-token}
       WEB_API_URL: http://nginx
       WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
       TICKET_CHECK_MODE: ${TICKET_CHECK_MODE:-web}
@@ -876,6 +878,7 @@ services:
       API_URL: http://api:8000
       API_TOKEN: ${API_TOKEN:-dev-token}
       LEASE_TTL_S: ${LEASE_TTL_S:-5}
+      COORDINATOR_TOKEN: ${COORDINATOR_TOKEN:-dev-coordinator-token}
       FAULTS: 'on'
       INSTANCE: coordinator-a
     volumes:
@@ -894,6 +897,7 @@ services:
       API_URL: http://api:8000
       API_TOKEN: ${API_TOKEN:-dev-token}
       LEASE_TTL_S: ${LEASE_TTL_S:-5}
+      COORDINATOR_TOKEN: ${COORDINATOR_TOKEN:-dev-coordinator-token}
       FAULTS: 'on'
       INSTANCE: coordinator-b
     volumes:

@@ -42,6 +42,35 @@ components:
         detail: {type: string}
         instance: {type: string}
 paths:
+  /v1/waitlist:
+    post:
+      security: [{bearerAuth: []}]
+      description: Enqueue a buyer for a performance's returned-seat reserve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [waitlist_id, performance_id, buyer_id]
+              properties:
+                waitlist_id: {type: string, minLength: 1}
+                performance_id: {type: string, minLength: 1}
+                buyer_id: {type: string, minLength: 1}
+      responses:
+        '201': {description: Buyer queued}
+        '401': {description: API token required}
+        '409': {description: Duplicate waitlist entry}
+  /v1/coordinator:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Currently registered owner and etcd generation}
+  /v1/history:
+    get:
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Registration, assignment and rejected-write history}
   /v1/compute:
     post:
       security: [{bearerAuth: []}]

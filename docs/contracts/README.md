@@ -1,7 +1,7 @@
 # Контракт команди: День 1
 
 Зафіксовано 2026-11-19 за прямим запитом користувача. Це основа для паралельної
-розробки; DPC ЛР1/2/3 додані окремо. Спільний запуск — тільки кореневий
+розробки; DPC ЛР1/2/3/6 додані окремо. Спільний запуск — тільки кореневий
 `docker-compose.yml`; одна PostgreSQL, один Kafka KRaft, один `migrate`.
 Константи для всіх процесів: [`config/project.env`](../../config/project.env).
 
@@ -45,6 +45,13 @@ fencing_token в bookings зарезервовано за запитом ком�
 Ray-режим DPC ЛР3 використовує read-only перевірку квитка у task та
 транзакційний приємник ефекту в API; [DPC-LR3.md](DPC-LR3.md). Міграція 011
 додає діагностичний лічильник викликів приємника до scans.
+
+DPC ЛР6 додає міграцію 012: `coordination_state`, `waitlist_entries`,
+`returned_reserves`, `waitlist_assignments`, `coordination_history`.
+Web передає лише вже зарезервований ним reserve; DPC призначає reserve
+покупцю, Web випускає ticket. [DPC-LR6.md](DPC-LR6.md) фіксує токени,
+транзакцію fencing і локальний дослід. До реалізації Web endpoint це fixture
+handoff, не сквозний продаж.
 
 ## Kafka
 

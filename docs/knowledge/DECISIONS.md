@@ -82,3 +82,14 @@ Ray task перевіряє квиток та викликає захищени�
 збережене рішення. Міграція 011 додає лише діагностичний `receiver_calls`.
 О3.2 та додаткові Д3.x не вибрані. Web ticket API досі потрібен для сквозного
 production-тесту.
+
+## Розподілення повернених місць DPC ЛР6 (2026-11-23)
+
+Міграція 012 зберігає DPC-проєкцію **вже зарезервованого Web** поверненого
+місця та чергу покупців; DPC не змінює Web `seats`, `bookings` чи `tickets`.
+`web_reserve_id` передається Web через окремий `WEB_RESERVE_TOKEN`, coordinator
+використовує `COORDINATOR_TOKEN`. `assignment_id=assignment:<web_reserve_id>`
+є стабільним ключем майбутнього випуску ticket Web. Справжні Web reserve API,
+вилучення місця з вільного продажу й ticket issuance потребують інтеграції
+з учасником Web; fixture route не є доказом цього кроку. Контракт:
+`docs/contracts/DPC-LR6.md`. О6.3/Д6.x не вибрані.
