@@ -67,7 +67,7 @@ def get_report() -> dict:
     jobs = payload.get("jobs") if isinstance(payload, dict) else None
     if not isinstance(jobs, list):
         raise Problem(502, "spark-runner-error", "Spark runner returned an invalid job list")
-    for job in jobs:  # Runner orders newest first. Its other jobs have separate results.
+    for job in jobs:  
         if isinstance(job, dict) and job.get("script") == JOB["script"] and job.get("args") == JOB["args"]:
             status = run_status(job)
             if status["state"] == "done":
