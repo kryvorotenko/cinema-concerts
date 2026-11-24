@@ -52,7 +52,7 @@ def build(facts: DataFrame, dim: DataFrame) -> DataFrame:
     ranked = joined.withColumn("pass_count", F.count("*").over(group)).withColumn(
         "_position", F.row_number().over(group.orderBy("event_time"))
     )
-    # Select one middle row for odd groups and two for even groups.
+    
     middle = ranked.where(F.abs(2 * F.col("_position").cast("long") - F.col("pass_count") - 1) <= 1)
     report = middle.groupBy("performance_id", "gate", "title", "venue", "headliner", "pass_count").agg(
         F.floor(F.avg(F.unix_micros("event_time").cast("decimal(20,0)"))).cast("long").alias("_median_micros")
