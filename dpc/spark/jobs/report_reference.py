@@ -60,8 +60,6 @@ def read_reference(data_dir: Path) -> list[dict]:
     if not pa.types.is_timestamp(time_type) or time_type.tz is None or time_type.unit == "ns":
         raise ValueError("scans.event_time must be a timestamp with a timezone and at most microsecond precision")
     history = scans.read(columns=["performance_id", "gate", "event_time", "accepted"])
-    # Arrow stores zoned timestamps as epoch offsets. Convert directly so UTC
-    # decoding also works on Windows without a separate time zone database.
     position = history.schema.get_field_index("event_time")
     micros = history["event_time"].cast(pa.timestamp("us", tz="UTC")).cast(pa.int64())
     history = history.set_column(position, "event_time", micros)
