@@ -55,3 +55,6 @@ PROBLEM_BASE = os.environ.get("PROBLEM_BASE", "https://example.edu/problems/")
 
 FAULTS = os.environ.get("FAULTS", "off") == "on"
 FAULT_DIR = os.environ.get("FAULT_DIR", "/faults")
+FAULT_PAUSE_S = _float("FAULT_PAUSE_S", 3.0)
+DRAIN_DELAY_S = _float("DRAIN_DELAY_S", 2.0)
+DRAIN_TIMEOUT_S = _float("DRAIN_TIMEOUT_S", 20.0)

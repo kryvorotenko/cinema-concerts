@@ -1,16 +1,17 @@
 import asyncio
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
 import psycopg
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import JSONResponse
 from psycopg import AsyncConnection
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import config, db, idempotency
+from . import seats as seatmap
 from .auth import current_user
-from .faults import fault
+from .faults import fault, pause
 from .formats import decode_cursor, encode_cursor, iso, money
 from .jsonlog import log
 from .problems import Problem
@@ -30,7 +31,22 @@ class HoldCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     category_id: str = Field(min_length=1, max_length=64)
-    seats: int = Field(ge=1, le=config.HOLD_MAX_SEATS)
+    seats: int | None = Field(default=None, ge=1, le=config.HOLD_MAX_SEATS)
+    seat_ids: list[Annotated[str, Field(min_length=1, max_length=100)]] | None = Field(
+        default=None, min_length=1, max_length=config.HOLD_MAX_SEATS
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_way(self) -> Self:
+        if (self.seats is None) == (self.seat_ids is None):
+            raise ValueError("send either seats or seat_ids")
+        if self.seat_ids is not None and len(set(self.seat_ids)) != len(self.seat_ids):
+            raise ValueError("seat_ids must be unique")
+        return self
+
+    @property
+    def count(self) -> int:
+        return len(self.seat_ids) if self.seat_ids is not None else int(self.seats or 0)
 
 
 _HOLD_SELECT = """
@@ -40,8 +56,8 @@ _HOLD_SELECT = """
 """
 
 
-def _view(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _view(row: dict[str, Any], places: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    view = {
         "id": row["id"],
         "performance_id": row["screening_id"],
         "category_id": row["category_id"],
@@ -53,6 +69,16 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
         "expires_at": iso(row["hold_expires_at"]),
         "total": money(row["seats"] * row["price_minor"], row["currency"]),
     }
+    if places is not None:
+        view["places"] = places
+    return view
+
+
+async def _views(conn: AsyncConnection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not await seatmap.explicit_seats_enabled(conn):
+        return [_view(r) for r in rows]
+    placed = await seatmap.places_of(conn, [r["id"] for r in rows])
+    return [_view(r, placed.get(r["id"], [])) for r in rows]
 
 
 async def _take_seats_unprotected(conn: AsyncConnection, category_id: str, seats: int) -> bool:
@@ -132,11 +158,14 @@ async def _why_not(conn: AsyncConnection, category_id: str, seats: int) -> Probl
 
 
 async def _create(conn: AsyncConnection, user: dict[str, Any], body: HoldCreate) -> dict[str, Any]:
-    taken = await _take_seats(conn, body.category_id, body.seats)
+    if body.seat_ids is not None and not await seatmap.explicit_seats_enabled(conn):
+        raise Problem(422, "seat-selection-disabled", "Seat selection is not enabled")
+    count = body.count
+    taken = await _take_seats(conn, body.category_id, count)
     if not taken and await expire_due(conn, body.category_id):
-        taken = await _take_seats(conn, body.category_id, body.seats)
+        taken = await _take_seats(conn, body.category_id, count)
     if not taken:
-        raise await _why_not(conn, body.category_id, body.seats)
+        raise await _why_not(conn, body.category_id, count)
 
     hold_id = str(uuid.uuid4())
     await conn.execute(
@@ -145,10 +174,15 @@ async def _create(conn: AsyncConnection, user: dict[str, Any], body: HoldCreate)
         SELECT %s, %s, c.screening_id, c.id, %s, %s, now() + make_interval(mins => %s)
         FROM seat_categories c WHERE c.id = %s
         """,
-        (hold_id, user["id"], body.seats, user["display_name"], config.HOLD_MINUTES, body.category_id),
+        (hold_id, user["id"], count, user["display_name"], config.HOLD_MINUTES, body.category_id),
     )
+    if body.seat_ids is not None:
+        await seatmap.assign_chosen(conn, hold_id, body.category_id, body.seat_ids)
+    elif not await seatmap.assign_automatically(conn, hold_id, body.category_id, count):
+        log("seats.unassigned", hold_id=hold_id, category_id=body.category_id, seats=count)
+    await pause("slow_request")
     cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s", (hold_id,))
-    return _view(await cur.fetchone())
+    return (await _views(conn, [await cur.fetchone()]))[0]
 
 
 @router.post("/v1/holds", status_code=201)
@@ -157,7 +191,7 @@ async def create_hold(
     user: Annotated[dict[str, Any], Depends(current_user)],
     key: Annotated[str, Depends(idempotency.key_header)],
 ) -> Response:
-    digest = idempotency.fingerprint(body.model_dump())
+    digest = idempotency.fingerprint(body.model_dump(exclude_none=True))
     async with db.connection() as conn, conn.transaction():
         replay = await idempotency.begin(conn, user["id"], key, OPERATION, digest)
         if replay is not None:
@@ -189,10 +223,11 @@ async def list_holds(
             {"user": user["id"], "after_time": after_time, "after_id": after_id, "limit": limit + 1},
         )
         rows = await cur.fetchall()
-    page = rows[:limit]
+        page = rows[:limit]
+        items = await _views(conn, page)
     more = len(rows) > limit
     return {
-        "items": [_view(r) for r in page],
+        "items": items,
         "next_cursor": encode_cursor(page[-1]["created_at"], page[-1]["id"]) if more else None,
     }
 
@@ -222,8 +257,9 @@ async def update_hold(
             )
         cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s", (hold_id,))
         row = await cur.fetchone()
+        view = (await _views(conn, [row]))[0]
     response.headers["ETag"] = f'"{row["version"]}"'
-    return _view(row)
+    return view
 
 
 @router.get("/v1/holds/{hold_id}")
@@ -233,10 +269,11 @@ async def get_hold(
     async with db.connection() as conn:
         cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s AND b.user_id = %s", (hold_id, user["id"]))
         row = await cur.fetchone()
+        view = (await _views(conn, [row]))[0] if row else None
     if row is None:
         raise Problem(404, "not-found", "Hold not found")
     response.headers["ETag"] = f'"{row["version"]}"'
-    return _view(row)
+    return view
 
 
 async def sweep_forever() -> None:

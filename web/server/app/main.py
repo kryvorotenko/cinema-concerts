@@ -7,7 +7,8 @@ Your work goes into new modules that you include below. Where each lab plugs in:
   TODO (O4.1-O4.4)  long operation, outbox in the same transaction (publisher and handler are
                     separate processes: app/publisher.py, app/worker.py)
   TODO (O5.1)       POST /v1/ws-tickets; the gateway itself is app/gateway.py
-  TODO (O6.3)       SIGTERM: lifecycle.start_draining(), finish started requests
+  DONE (O6.1)       seats.py (explicit seats behind the explicit-seats flag), seats_admin.py (backfill, check)
+  DONE (O6.3)       lifecycle.py: SIGTERM -> draining, 503 for new work, wait for started requests
 The contract of all routes is your openapi.yaml (start from openapi.example.yaml).
 """
 
@@ -27,9 +28,11 @@ from . import (
     db,
     holds,
     idempotency,
+    lifecycle,
     metrics,
     middleware,
     problems,
+    seats,
     service,
     sessions,
     telemetry,
@@ -42,6 +45,7 @@ from .jsonlog import log
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await db.open_pool()
+    lifecycle.install_sigterm()
 
     tasks = [
         asyncio.create_task(holds.sweep_forever()),
@@ -64,6 +68,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 # The contract is openapi.yaml of your repository, so the generated schema routes are off.
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(lifecycle.DrainGuard)
 app.add_middleware(CsrfGuard)
 app.add_middleware(
     CORSMiddleware,
@@ -80,5 +85,6 @@ app.include_router(metrics.router)
 telemetry.install(app)
 app.include_router(auth.router)
 app.include_router(catalog.router)
+app.include_router(seats.router)
 app.include_router(holds.router)
 app.include_router(tickets.router)

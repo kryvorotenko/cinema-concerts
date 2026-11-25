@@ -85,6 +85,12 @@ replication factor 1. Для керованого досліду О5.3 до пе
 [WEB-LR3.md](WEB-LR3.md). Міграція `022_web_sessions.sql` додає таблицю `sessions` і хеші демопаролів. Заголовок
 `X-User-Id` більше не приймається; маршрут `GET /v1/tickets/{code}` для DPC лишається під сервісним токеном.
 
+## Web ЛР6
+
+Конкретні місця за рядом і номером замість лічильника категорії, прапорець `explicit-seats`, межа повернення та
+коректне завершення процесу за SIGTERM: [WEB-LR6.md](WEB-LR6.md). Міграція `023_web_seats.sql` лише додає таблицю
+`booking_seats`, тригер і таблицю `feature_flags`; наповнення місцями — `python -m app.seats_admin backfill`.
+
 ## Порти й спільні конфіги
 
 Повний виконуваний список — `docker-compose.yml`; всі його змінні — `.env.example`.

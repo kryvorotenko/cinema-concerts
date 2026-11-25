@@ -10,6 +10,7 @@ place together only one succeeds, the others go on. A separate "exists?" check b
 removal would let two of them pass it and both die.
 """
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -26,3 +27,14 @@ def fault(place: str) -> None:
         return  # not armed, or another process took it first
     log("fault.hit", place=place)
     os._exit(1)
+
+
+async def pause(place: str) -> None:
+    if not config.FAULTS:
+        return
+    try:
+        (Path(config.FAULT_DIR) / place).unlink()
+    except FileNotFoundError:
+        return
+    log("fault.pause", place=place, seconds=config.FAULT_PAUSE_S)
+    await asyncio.sleep(config.FAULT_PAUSE_S)

@@ -54,6 +54,8 @@ export const logout = () => call("POST", "/v1/auth/logout");
 
 export const me = () => call("GET", "/v1/me");
 
+export const features = () => call("GET", "/v1/features");
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isInProgress = (error) => error.status === 409 && String(error.body?.type ?? "").endsWith("request-in-progress");

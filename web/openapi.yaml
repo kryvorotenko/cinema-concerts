@@ -1,10 +1,10 @@
-# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР3.
+# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР6.
 # Маршрути, яких ще немає, сюди не додаються: кожна ЛР доповнює цей файл своїми.
 # x-course позначає роль операції для перевірки: main, list, object.
 openapi: 3.1.0
 info:
   title: C01. Кінотеатри й концерти — Web
-  version: 1.0.0-lr3
+  version: 1.0.0-lr6
   description: |
     Глядач вибирає виконання (концерт або сеанс) і категорію місць, утримує K місць на 10 хвилин.
     Оплата й випуск квитка — ЛР4. Помилки — Problem Details (RFC 9457, `application/problem+json`).
@@ -28,6 +28,8 @@ tags:
     description: Службові маршрути, однакові для всіх тем
   - name: auth
     description: Вхід, вихід і поточна особа
+  - name: seats
+    description: Конкретні місця (за прапорцем explicit-seats)
   - name: catalog
     description: Виконання та категорії місць
   - name: holds
@@ -143,6 +145,7 @@ paths:
       tags: [service]
       operationId: getReady
       summary: Готовність приймати запити (база доступна, процес не завершується)
+      description: Після SIGTERM відповідає 503 `draining`, а нові запити предметних маршрутів отримують 503 `shutting-down`; розпочаті запити завершуються.
       security: []
       responses:
         "200":
@@ -239,6 +242,13 @@ paths:
         Поки перший запит з цим ключем виконується, повтор отримує 409 `request-in-progress`
         з `Retry-After`. Ключ належить користувачу й діє 24 години. Невдалі відповіді (409, 422)
         не зберігаються: повтор обчислюється заново.
+
+        Тіло містить або `seats` (кількість; так працює клієнт попередньої версії, сервер сам призначає
+        сусідні вільні місця одного ряду), або `seat_ids` (конкретні місця; лише коли прапорець
+        `explicit-seats` увімкнено, інакше 422 `seat-selection-disabled`). Обидва поля разом або жодне — 422.
+        Зайняте місце дає 409 `seat-taken`, місце іншої категорії чи невідоме — 422 `invalid-seat`; у цих
+        випадках нічого не змінюється. Коли прапорець увімкнено, відповідь має поле `places`.
+        Екземпляр, що завершує роботу, відповідає 503 `shutting-down` з `Retry-After: 1`.
       x-course: main
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -259,6 +269,9 @@ paths:
               missing:
                 summary: Категорії немає
                 value: {category_id: no-such-category, seats: 1}
+              chosenSeats:
+                summary: Конкретні місця (прапорець explicit-seats увімкнено)
+                value: {category_id: cat-race-50, seat_ids: ["cat-race-50:A1", "cat-race-50:A2"]}
       responses:
         "201":
           description: Утримання створено
@@ -409,6 +422,49 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/features:
+    get:
+      tags: [seats]
+      operationId: getFeatures
+      summary: Увімкнені можливості
+      responses:
+        "200":
+          description: Стан прапорців, потрібних клієнту
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [explicit_seats]
+                properties:
+                  explicit_seats:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /v1/categories/{id}/seats:
+    get:
+      tags: [seats]
+      operationId: listSeats
+      summary: Схема місць категорії
+      description: Доступна лише коли прапорець `explicit-seats` увімкнено, інакше 404 `feature-disabled`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Усі місця категорії та ознака вільного місця
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SeatState"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /v1/categories/{id}/close-sales:
     post:
       tags: [catalog]
@@ -827,7 +883,10 @@ components:
     HoldCreate:
       type: object
       additionalProperties: false
-      required: [category_id, seats]
+      required: [category_id]
+      oneOf:
+        - required: [seats]
+        - required: [seat_ids]
       properties:
         category_id:
           type: string
@@ -837,6 +896,39 @@ components:
           type: integer
           minimum: 1
           maximum: 10
+        seat_ids:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+    Place:
+      type: object
+      required: [id, row, number]
+      properties:
+        id:
+          type: string
+        row:
+          type: string
+        number:
+          type: integer
+          minimum: 1
+    SeatState:
+      type: object
+      required: [id, row, number, free]
+      properties:
+        id:
+          type: string
+        row:
+          type: string
+        number:
+          type: integer
+          minimum: 1
+        free:
+          type: boolean
     Hold:
       type: object
       required: [id, performance_id, category_id, seats, holder_name, status, version, created_at, expires_at, total]
@@ -866,6 +958,11 @@ components:
           format: date-time
         total:
           $ref: "#/components/schemas/Money"
+        places:
+          type: array
+          description: Місця утримання; є лише коли прапорець `explicit-seats` увімкнено
+          items:
+            $ref: "#/components/schemas/Place"
     TicketCheck:
       type: object
       required: [ticket_id, performance_id, valid]

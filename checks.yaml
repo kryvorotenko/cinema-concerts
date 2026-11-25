@@ -2,7 +2,7 @@
 web:
   openapi: web/openapi.yaml
   base: http://localhost:8080
-  items: [О1.5, О1.6, О2.3, О2.4, О3.3, О3.4]
+  items: [О1.5, О1.6, О2.3, О2.4, О3.3, О3.4, О6.1, О6.3]
 
 dpc:
   openapi: dpc/openapi.yaml

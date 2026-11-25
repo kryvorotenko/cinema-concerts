@@ -15,6 +15,11 @@
         pre { background: #f3f3f3; padding: .75rem; white-space: pre-wrap; }
         .problem { color: #a00; }
         .muted { color: #666; }
+        .row { margin: .2rem 0; }
+        .seat { min-width: 2.6rem; }
+        .seat.free { background: #e6f4ea; }
+        .seat.taken { background: #ddd; color: #888; }
+        .seat.chosen { background: #fde68a; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -45,11 +50,18 @@
         </table>
     </fieldset>
 
+    <fieldset id="seatMap" hidden>
+        <legend>Схема місць</legend>
+        <div id="seatRows"></div>
+        <p id="chosenInfo" class="muted"></p>
+        <button id="holdChosen">Утримати вибрані місця</button>
+    </fieldset>
+
     <fieldset>
         <legend>Мої утримання</legend>
         <button id="reload">Оновити</button>
         <table>
-            <thead><tr><th>Id</th><th>Категорія</th><th>Місць</th><th>Статус</th><th>До</th><th>Сума</th></tr></thead>
+            <thead><tr><th>Id</th><th>Категорія</th><th>Місць</th><th>Місця</th><th>Статус</th><th>До</th><th>Сума</th></tr></thead>
             <tbody id="holds"></tbody>
         </table>
         <p id="count" class="muted"></p>
@@ -71,7 +83,7 @@
     <pre id="out">—</pre>
 
     <script type="module">
-        import {call, callIdempotent, login, logout, me, money, OutcomeUnknown, Problem, readAllPages} from "./api.js";
+        import {call, callIdempotent, features, login, logout, me, money, OutcomeUnknown, Problem, readAllPages} from "./api.js";
 
         const $ = (id) => document.getElementById(id);
         const show = (value, isProblem = false) => {
@@ -96,6 +108,50 @@
             await loadCategories();
         }
 
+        let explicitSeats = false;
+        let mapCategory = null;
+        let chosen = new Set();
+
+        async function openSeatMap(category) {
+            mapCategory = category;
+            chosen = new Set();
+            await drawSeatMap();
+        }
+
+        async function drawSeatMap() {
+            const box = $("seatRows");
+            box.replaceChildren();
+            if (!explicitSeats || !mapCategory) {
+                $("seatMap").hidden = true;
+                return;
+            }
+            const {data} = await call("GET", `/v1/categories/${encodeURIComponent(mapCategory.id)}/seats`);
+            $("seatMap").hidden = false;
+            const rows = new Map();
+            for (const s of data.items) {
+                if (!rows.has(s.row)) rows.set(s.row, []);
+                rows.get(s.row).push(s);
+            }
+            for (const [label, items] of rows) {
+                const line = document.createElement("div");
+                line.className = "row";
+                line.appendChild(text(`${label}: `));
+                for (const s of items) {
+                    const button = document.createElement("button");
+                    button.textContent = s.number;
+                    button.className = "seat " + (!s.free ? "taken" : chosen.has(s.id) ? "chosen" : "free");
+                    button.disabled = !s.free;
+                    button.onclick = () => {
+                        chosen.has(s.id) ? chosen.delete(s.id) : chosen.add(s.id);
+                        drawSeatMap().catch(report);
+                    };
+                    line.appendChild(button);
+                }
+                box.appendChild(line);
+            }
+            $("chosenInfo").textContent = `${mapCategory.name}: обрано ${chosen.size}`;
+        }
+
         async function loadCategories() {
             const body = $("categories");
             body.replaceChildren();
@@ -109,17 +165,23 @@
                 const seats = document.createElement("input");
                 seats.type = "number"; seats.min = 1; seats.value = 1; seats.style.width = "4rem";
                 row.insertCell().appendChild(seats);
+                const cellActions = row.insertCell();
                 const button = document.createElement("button");
                 button.textContent = "Утримати";
-                button.onclick = () => hold(c.id, seats.value, crypto.randomUUID());
-                row.insertCell().appendChild(button);
+                button.onclick = () => hold({category_id: c.id, seats: Number(seats.value)}, crypto.randomUUID());
+                cellActions.appendChild(button);
+                if (explicitSeats) {
+                    const choose = document.createElement("button");
+                    choose.textContent = "Обрати місця";
+                    choose.onclick = () => openSeatMap(c).catch(report);
+                    cellActions.appendChild(choose);
+                }
             }
         }
 
         let pending = null;
 
-        async function hold(categoryId, seats, key) {
-            const body = {category_id: categoryId, seats: Number(seats)};
+        async function hold(body, key) {
             try {
                 const reply = await callIdempotent("POST", "/v1/holds", {
                     body,
@@ -139,7 +201,7 @@
                 });
             } catch (error) {
                 if (error instanceof OutcomeUnknown) {
-                    pending = {categoryId, seats, key: error.key};
+                    pending = {body, key: error.key};
                     $("retry").hidden = false;
                     show(
                         `Результат невідомий: запит міг виконатися, відповіді немає. Ключ ${error.key}. ` +
@@ -150,7 +212,7 @@
                     report(error);
                 }
             }
-            await Promise.all([loadCategories(), loadHolds()]).catch(report);
+            await Promise.all([loadCategories(), loadHolds(), drawSeatMap()]).catch(report);
         }
 
         async function loadHolds() {
@@ -162,6 +224,7 @@
                 cell(row, h.id);
                 cell(row, h.category_id);
                 cell(row, h.seats);
+                cell(row, (h.places ?? []).map((p) => `${p.row}${p.number}`).join(", "));
                 cell(row, h.status);
                 cell(row, h.status === "held" ? when(h.expires_at) : "");
                 cell(row, money(h.total));
@@ -175,10 +238,12 @@
             $("holds").replaceChildren();
             $("performance").replaceChildren();
             $("count").textContent = "";
+            $("seatMap").hidden = true;
         }
 
         async function start(person) {
             $("who").textContent = `${person.name}, роль: ${person.role}`;
+            explicitSeats = (await features()).data.explicit_seats;
             await loadPerformances();
             await loadHolds();
         }
@@ -221,11 +286,17 @@
         $("renameHold").onclick = attempt(() => call("PATCH", holdUrl(), {body: {holder_name: $("holderName").value}}));
         $("closeSales").onclick = attempt(() => call("POST", categoryUrl("close-sales")));
         $("openSales").onclick = attempt(() => call("POST", categoryUrl("open-sales")));
-        $("retry").onclick = () => pending && hold(pending.categoryId, pending.seats, pending.key);
+        $("retry").onclick = () => pending && hold(pending.body, pending.key);
+        $("holdChosen").onclick = () => {
+            if (!chosen.size) return show("Спершу оберіть місця на схемі", true);
+            const ids = [...chosen];
+            chosen = new Set();
+            return hold({category_id: mapCategory.id, seat_ids: ids}, crypto.randomUUID());
+        };
         $("enter").onclick = enter;
         $("leave").onclick = leave;
         $("performance").onchange = () => loadCategories().catch(report);
-        $("reload").onclick = () => Promise.all([loadCategories(), loadHolds()]).catch(report);
+        $("reload").onclick = () => Promise.all([loadCategories(), loadHolds(), drawSeatMap()]).catch(report);
         me().then(({data}) => start(data)).catch(() => signedOut("Ви не ввійшли"));
     </script>
 </body>
