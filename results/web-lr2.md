@@ -47,3 +47,4 @@ BASES=http://localhost:8001,http://localhost:8002 DATABASE_URL=postgresql://app:
 - Браузерний клієнт з повтором (`index.html`) у браузері не відкривався: логіку `callIdempotent` перевірено лише
   Node-тестом із підміною `fetch`.
 - Python 3.14 (образ проєкту) не перевірявся.
+- Браузерний клієнт (:8081): створення утримання дає `attempts: 1`, `replayed: false`; після `touch /faults/after_commit_before_response` перша спроба лишилась без відповіді, клієнт повторив запит з тим самим ключем і отримав `attempts: 2`, `replayed: true`; у «Мої утримання» одне нове утримання.
