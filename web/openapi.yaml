@@ -1,0 +1,555 @@
+# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР1.
+# Маршрути, яких ще немає, сюди не додаються: кожна ЛР доповнює цей файл своїми.
+# x-course позначає роль операції для перевірки: main, list, object.
+openapi: 3.1.0
+info:
+  title: C01. Кінотеатри й концерти — Web
+  version: 1.0.0-lr1
+  description: |
+    Глядач вибирає виконання (концерт або сеанс) і категорію місць, утримує K місць на 10 хвилин.
+    Оплата й випуск квитка — ЛР4. Помилки — Problem Details (RFC 9457, `application/problem+json`).
+    Ідентифікатори — рядки. Гроші — ціле число мінімальних одиниць (копійки) і код валюти ISO 4217.
+    Моменти — RFC 3339 у UTC. `performance_id` — це `screenings.id`; у цьому API
+    «подія» з маршруту `/v1/events` є виконанням (performance).
+
+    До ЛР3 користувач визначається заголовком `X-User-Id`; власник об'єкта береться лише з нього.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:8080
+    description: nginx (app-a, app-b)
+security:
+  - userHeader: []
+
+tags:
+  - name: service
+    description: Службові маршрути, однакові для всіх тем
+  - name: catalog
+    description: Виконання та категорії місць
+  - name: holds
+    description: Утримання місць (у БД — таблиця bookings)
+  - name: tickets
+    description: Перевірка квитка сервісом DPC
+
+paths:
+  /health:
+    get:
+      tags: [service]
+      operationId: getHealth
+      summary: Живучість процесу, без звернення до бази
+      security: []
+      responses:
+        "200":
+          description: Процес відповідає
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, instance]
+                properties:
+                  status:
+                    type: string
+                  instance:
+                    type: string
+              example: {status: ok, instance: app-a}
+        "4XX":
+          $ref: "#/components/responses/Problem"
+  /ready:
+    get:
+      tags: [service]
+      operationId: getReady
+      summary: Готовність приймати запити (база доступна, процес не завершується)
+      security: []
+      responses:
+        "200":
+          description: Готовий
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  instance:
+                    type: string
+        "503":
+          description: База недоступна або процес завершується
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+        "4XX":
+          $ref: "#/components/responses/Problem"
+  /metrics:
+    get:
+      tags: [service]
+      operationId: getMetrics
+      summary: Метрики Prometheus
+      security: []
+      responses:
+        "200":
+          description: Текстовий формат Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+        "4XX":
+          $ref: "#/components/responses/Problem"
+
+  /v1/events:
+    get:
+      tags: [catalog]
+      operationId: listEvents
+      summary: Виконання (концерти й сеанси) за часом початку
+      responses:
+        "200":
+          description: До 100 виконань
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Performance"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /v1/events/{id}/categories:
+    get:
+      tags: [catalog]
+      operationId: listCategories
+      summary: Категорії місць виконання із залишком
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Категорії від дорожчої до дешевшої
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/holds:
+    post:
+      tags: [holds]
+      operationId: createHold
+      summary: Утримати місця категорії на 10 хвилин
+      description: |
+        Перевірка залишку, зменшення `available` і створення утримання виконуються в одній транзакції;
+        відповідь надсилається після commit. Власник — користувач із `X-User-Id`.
+      x-course: main
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldCreate"
+            examples:
+              normal:
+                summary: Звичайний запит
+                value: {category_id: cat-jazz-std, seats: 2}
+              scarce:
+                summary: Категорія з обмеженою кількістю місць (гонка й 409)
+                value: {category_id: cat-scarce, seats: 1}
+                x-capacity: 5
+              missing:
+                summary: Категорії немає
+                value: {category_id: no-such-category, seats: 1}
+      responses:
+        "201":
+          description: Утримання створено
+          headers:
+            Location:
+              description: Адреса утримання, `/v1/holds/{id}`
+              schema:
+                type: string
+            ETag:
+              description: Версія утримання
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hold"
+              example:
+                id: 7c26c4e0-090c-4561-9f06-ec37418cad57
+                performance_id: scr-jazz-1
+                category_id: cat-jazz-std
+                seats: 2
+                holder_name: Аліса Коваль
+                status: held
+                version: 1
+                created_at: "2035-05-01T10:00:00.000Z"
+                expires_at: "2035-05-01T10:10:00.000Z"
+                total: {amount_minor: 120000, currency: UAH}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+    get:
+      tags: [holds]
+      operationId: listHolds
+      summary: Мої утримання від нових до старих
+      description: Порядок `(created_at, id)` за спаданням. `next_cursor` непрозорий; зіпсований курсор дає 400.
+      x-course: list
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Сторінка утримань
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Hold"
+                  next_cursor:
+                    type: [string, "null"]
+                    description: "null — остання сторінка"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+  /v1/holds/{id}:
+    get:
+      tags: [holds]
+      operationId: getHold
+      summary: Одне моє утримання
+      description: Чуже й неіснуюче утримання дають однаковий 404.
+      x-course: object
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Утримання
+          headers:
+            ETag:
+              description: Версія утримання
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hold"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/tickets/{code}:
+    get:
+      tags: [tickets]
+      operationId: getTicket
+      summary: Перевірка квитка за кодом або за ідентифікатором квитка (для сервісу DPC)
+      description: |
+        Викликається DPC із сервісним токеном `WEB_API_TOKEN`. Контракт — docs/contracts/DPC-LR1.md.
+        У шляху може бути код квитка (`TKT-DEMO-0001`) або `ticket_id` (`tkt-demo-1`): скан із картки C01
+        містить лише `ticket_id`. Якщо значення є кодом одного квитка й id іншого, перемагає код.
+      security:
+        - serviceToken: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Код квитка або його ідентифікатор
+          schema:
+            type: string
+          examples:
+            byCode:
+              value: TKT-DEMO-0001
+            byId:
+              value: tkt-demo-1
+      responses:
+        "200":
+          description: Квиток відомий; `valid` враховує стан квитка й утримання
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketCheck"
+              example: {ticket_id: tkt-demo-1, performance_id: scr-jazz-1, valid: true}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    userHeader:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: До ЛР3. Ідентифікатор наявного користувача (usr-alice, usr-bob, usr-staff)
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: Сервісний токен DPC (WEB_API_TOKEN)
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Непрозорий курсор з `next_cursor` попередньої сторінки
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+
+  headers:
+    RetryAfter:
+      description: Через скільки секунд повторити
+      schema:
+        type: integer
+        minimum: 0
+    RequestId:
+      description: Ідентифікатор запиту для журналу; коректний вхідний X-Request-ID повертається без змін
+      schema:
+        type: string
+
+  responses:
+    Problem:
+      description: Помилка (Problem Details)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: Тіло не є коректним JSON або зіпсований курсор
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://example.edu/problems/malformed-json
+            title: Request body is not valid JSON
+            status: 400
+            instance: /v1/holds
+    Unauthenticated:
+      description: Немає або невідомий користувач (сервісний токен)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Ресурсу немає (для чужого утримання — те саме)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: |
+        Місць недостатньо (`not-enough-seats`), продаж категорії закрито (`sales-closed`)
+        або виконання не продається (`performance-unavailable`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://example.edu/problems/not-enough-seats
+            title: Not enough free seats
+            status: 409
+            detail: Requested 6, available 5
+            instance: /v1/holds
+    Unprocessable:
+      description: |
+        Коректний JSON із хибними даними: відсутнє або чуже поле, неціле `seats`, `seats` поза 1..10,
+        `limit` поза 1..50
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://example.edu/problems/invalid-request
+            title: Invalid request data
+            status: 422
+            errors: [{field: body.seats, message: Input should be greater than or equal to 1}]
+            instance: /v1/holds
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errors:
+          type: array
+          description: Поля, що не пройшли перевірку (400/422)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          description: Копійки
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+    Venue:
+      type: object
+      required: [id, name, city, time_zone]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        city:
+          type: string
+        time_zone:
+          type: string
+          description: Назва зони IANA; час початку подається в UTC
+    Performance:
+      type: object
+      required: [id, event_id, title, kind, starts_at, duration_min, status, venue]
+      properties:
+        id:
+          type: string
+          description: "`screenings.id` = `performance_id`"
+        event_id:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+          enum: [cinema, concert]
+        starts_at:
+          type: string
+          format: date-time
+        duration_min:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [scheduled, cancelled, finished]
+        venue:
+          $ref: "#/components/schemas/Venue"
+    Category:
+      type: object
+      required: [id, performance_id, name, capacity, available, price, sales_open]
+      properties:
+        id:
+          type: string
+        performance_id:
+          type: string
+        name:
+          type: string
+        capacity:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+          minimum: 0
+        price:
+          $ref: "#/components/schemas/Money"
+        sales_open:
+          type: boolean
+    HoldCreate:
+      type: object
+      additionalProperties: false
+      required: [category_id, seats]
+      properties:
+        category_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        seats:
+          type: integer
+          minimum: 1
+          maximum: 10
+    Hold:
+      type: object
+      required: [id, performance_id, category_id, seats, holder_name, status, version, created_at, expires_at, total]
+      properties:
+        id:
+          type: string
+        performance_id:
+          type: string
+        category_id:
+          type: string
+        seats:
+          type: integer
+          minimum: 1
+        holder_name:
+          type: string
+        status:
+          type: string
+          enum: [held, confirmed, expired, cancelled, refunded]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        total:
+          $ref: "#/components/schemas/Money"
+    TicketCheck:
+      type: object
+      required: [ticket_id, performance_id, valid]
+      properties:
+        ticket_id:
+          type: string
+        performance_id:
+          type: string
+        valid:
+          type: boolean

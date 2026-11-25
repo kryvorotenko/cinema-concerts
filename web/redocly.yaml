@@ -1,0 +1,6 @@
+# Lint: npx @redocly/cli lint --config web/redocly.yaml web/openapi.yaml   (from the project root)
+extends:
+  - recommended
+rules:
+  # the stand is local by design: nginx on localhost:8080
+  no-server-example.com: off
