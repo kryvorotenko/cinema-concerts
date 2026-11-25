@@ -34,6 +34,21 @@ python experiments/check_foundation.py
 | `docs/contracts/` | Контракт команди: таблиці, топіки, порти й запуск |
 | `docs/knowledge/`, `AGENTS.md` | Збережені вимоги методичок і розподіл роботи |
 
+## Web ЛР1
+
+Каталог і утримання місць: `GET /v1/events` (виконання; `id` = `performance_id`), `GET /v1/events/{id}/categories`, `POST /v1/holds` (201 + Location, одна транзакція, 10 хвилин), `GET /v1/holds` (курсор), `GET /v1/holds/{id}`; для DPC — `GET /v1/tickets/{code}` (код або `ticket_id`) із Bearer `WEB_API_TOKEN`. До ЛР3 користувач задається заголовком `X-User-Id` (`usr-alice`, `usr-bob`, `usr-staff`, міграція `020_web_demo_seed.sql`). Контракт: [web/openapi.yaml](web/openapi.yaml); модель, стани й інваріанти: [docs/contracts/WEB-LR1.md](docs/contracts/WEB-LR1.md); результати й межі перевірки: [results/web-lr1.md](results/web-lr1.md).
+
+```powershell
+docker compose up -d --build
+Get-Content -Raw experiments/web_lr1_reset.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
+python experiments/test_web_lr1.py
+Get-Content -Raw experiments/web_dpc_e2e_prepare.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
+python experiments/test_web_dpc_e2e.py
+npx @redocly/cli lint --config web/redocly.yaml web/openapi.yaml
+```
+
+Клієнт: `python -m http.server 8081 --bind 127.0.0.1 --directory web/client`, відкрити http://localhost:8081.
+
 ## Контракт команди
 
 Деталі: [контракт Дня 1](docs/contracts/README.md) та [інструкція для учасників і агентів](docs/TEAM-WORKFLOW.md). Усі компоненти використовують одну БД та одного брокера. Топіки: `domain-events`, `notifications`, `ticket-telemetry`. Останній є перейменуванням топіка `scans` із методички; зміст подій входу збережено.

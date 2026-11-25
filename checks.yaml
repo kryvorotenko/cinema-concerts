@@ -2,9 +2,9 @@
 # Upstream example contracts describe a library, not topic C01.
 # Replace them with C01 contracts when implementing the laboratories.
 web:
-  openapi: web/openapi.example.yaml
+  openapi: web/openapi.yaml
   base: http://localhost:8080
-  items: []
+  items: [О1.5, О1.6]
 
 dpc:
   openapi: dpc/openapi.example.yaml

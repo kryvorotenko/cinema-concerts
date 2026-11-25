@@ -1,150 +1,149 @@
 <!doctype html>
-<!-- Shell of the web client: login and one request form. Replace the form with the scenarios of
-     your card (O1.7, O3.4, O4.5, O5.4). Run: python -m http.server 8081 --bind 127.0.0.1 --directory client -->
+<!-- Web LR1 client (O1.7): choose a user, pick a performance and a category, hold seats, see my holds.
+     Run: python -m http.server 8081 --bind 127.0.0.1 --directory web/client  and open http://localhost:8081 -->
 <html lang="uk">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Клієнт проєкту</title>
+    <title>Кінотеатри й концерти</title>
     <style>
-        body {
-            font: 15px/1.5 system-ui, sans-serif;
-            max-width: 48rem;
-            margin: 2rem auto;
-            padding: 0 1rem;
-        }
-
-        fieldset {
-            margin-bottom: 1.5rem;
-            border: 1px solid #ccc;
-        }
-
-        label {
-            display: block;
-            margin: .4rem 0;
-        }
-
-        input, select, textarea {
-            font: inherit;
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        textarea {
-            height: 6rem;
-            font-family: ui-monospace, monospace;
-        }
-
-        button {
-            font: inherit;
-            margin-top: .5rem;
-        }
-
-        pre {
-            background: #f3f3f3;
-            padding: .75rem;
-            white-space: pre-wrap;
-        }
-
-        .problem {
-            color: #a00;
-        }
+        body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+        fieldset { margin-bottom: 1.5rem; border: 1px solid #ccc; }
+        label { display: block; margin: .4rem 0; }
+        input, select { font: inherit; box-sizing: border-box; }
+        button { font: inherit; margin: .25rem .25rem 0 0; }
+        table { border-collapse: collapse; width: 100%; }
+        td, th { border-bottom: 1px solid #ddd; padding: .25rem .5rem; text-align: left; }
+        pre { background: #f3f3f3; padding: .75rem; white-space: pre-wrap; }
+        .problem { color: #a00; }
+        .muted { color: #666; }
     </style>
 </head>
 <body>
-    <h1>Клієнт проєкту</h1>
+    <h1>Кінотеатри й концерти</h1>
 
     <fieldset>
-        <legend>Вхід</legend>
-        <form id="login-form">
-            <label>Логін <input name="login" autocomplete="username" required></label>
-            <label>Пароль <input name="password" type="password" autocomplete="current-password" required></label>
-            <button>Увійти</button>
-            <button type="button" id="logout">Вийти</button>
-        </form>
-        <p id="who">Не виконано вхід.</p>
+        <legend>Користувач</legend>
+        <label>Ідентифікатор (до входу з паролем у ЛР3)
+            <input id="user" list="users" value="usr-alice">
+            <datalist id="users"><option value="usr-alice"><option value="usr-bob"><option value="usr-staff"></datalist>
+        </label>
+        <button id="enter">Увійти</button>
+        <span id="who" class="muted"></span>
     </fieldset>
 
     <fieldset>
-        <legend>Запит</legend>
-        <form id="request-form">
-            <label>Метод
-                <select name="method">
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PATCH</option>
-                    <option>DELETE</option>
-                </select>
-            </label>
-            <label>Шлях <input name="path" value="/v1/me"></label>
-            <label>Тіло JSON (порожньо — без тіла)
-                <textarea name="body"></textarea>
-            </label>
-            <label><input type="checkbox" name="idempotent" style="width:auto"> з новим Idempotency-Key</label>
-            <button>Надіслати</button>
-        </form>
+        <legend>Виконання й категорії</legend>
+        <label>Виконання <select id="performance"></select></label>
+        <table>
+            <thead><tr><th>Категорія</th><th>Ціна</th><th>Вільно</th><th>Місць</th><th></th></tr></thead>
+            <tbody id="categories"></tbody>
+        </table>
     </fieldset>
 
-    <h2>Відповідь</h2>
+    <fieldset>
+        <legend>Мої утримання</legend>
+        <button id="reload">Оновити</button>
+        <table>
+            <thead><tr><th>Категорія</th><th>Місць</th><th>Статус</th><th>До</th><th>Сума</th></tr></thead>
+            <tbody id="holds"></tbody>
+        </table>
+        <p id="count" class="muted"></p>
+    </fieldset>
+
+    <h2>Результат останньої дії</h2>
     <pre id="out">—</pre>
 
     <script type="module">
-        import {call, login, logout, newKey, Problem} from "./api.js";
+        import {call, currentUser, money, Problem, readAllPages, setUser} from "./api.js";
 
-        const out = document.getElementById("out");
-
+        const $ = (id) => document.getElementById(id);
         const show = (value, isProblem = false) => {
-            out.className = isProblem ? "problem" : "";
-            out.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+            $("out").className = isProblem ? "problem" : "";
+            $("out").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
         };
-
+        // Problem Details: status, title and detail are shown; fields we do not know are tolerated
         const report = (error) =>
-            error instanceof Problem
-                ? show({status: error.status, ...error.body}, true)
-                : show(String(error), true);
+            show(error instanceof Problem ? {status: error.status, ...error.body} : String(error), true);
+        const text = (value) => document.createTextNode(String(value ?? ""));
+        const cell = (row, value) => row.insertCell().appendChild(text(value));
+        const when = (iso) => new Date(iso).toLocaleString("uk-UA");
 
-        async function refreshWho() {
-            try {
-                const {data} = await call("GET", "/v1/me");
-                document.getElementById("who").textContent = `${data.name ?? data.id} (${data.role})`;
-            } catch {
-                document.getElementById("who").textContent = "Не виконано вхід.";
+        async function loadPerformances() {
+            const {data} = await call("GET", "/v1/events");
+            const select = $("performance");
+            select.replaceChildren(...data.items.map((p) => {
+                const option = document.createElement("option");
+                option.value = p.id;
+                option.textContent = `${p.title} — ${when(p.starts_at)}, ${p.venue.name}`;
+                return option;
+            }));
+            await loadCategories();
+        }
+
+        async function loadCategories() {
+            const body = $("categories");
+            body.replaceChildren();
+            if (!$("performance").value) return;
+            const {data} = await call("GET", `/v1/events/${encodeURIComponent($("performance").value)}/categories`);
+            for (const c of data.items) {
+                const row = body.insertRow();
+                cell(row, c.name + (c.sales_open ? "" : " (продаж закрито)"));
+                cell(row, money(c.price));
+                cell(row, `${c.available} / ${c.capacity}`);
+                const seats = document.createElement("input");
+                seats.type = "number"; seats.min = 1; seats.value = 1; seats.style.width = "4rem";
+                row.insertCell().appendChild(seats);
+                const button = document.createElement("button");
+                button.textContent = "Утримати";
+                button.onclick = () => hold(c.id, seats.value);
+                row.insertCell().appendChild(button);
             }
         }
 
-        document.getElementById("login-form").onsubmit = async (event) => {
-            event.preventDefault();
-            const form = new FormData(event.target);
+        async function hold(categoryId, seats) {
             try {
-                await login(form.get("login"), form.get("password"));
-                await refreshWho();
-                show("вхід виконано");
-            } catch (error) {
-                report(error);
-            }
-        };
-
-        document.getElementById("logout").onclick = async () => {
-            await logout().catch(report);
-            await refreshWho();
-        };
-
-        document.getElementById("request-form").onsubmit = async (event) => {
-            event.preventDefault();
-            const form = new FormData(event.target);
-            const text = form.get("body").trim();
-            try {
-                const reply = await call(form.get("method"), form.get("path"), {
-                    body: text ? JSON.parse(text) : undefined,
-                    idempotencyKey: form.get("idempotent") ? newKey() : undefined,
-                });
+                // seats must be a JSON number: the server does not accept "2"
+                const reply = await call("POST", "/v1/holds", {body: {category_id: categoryId, seats: Number(seats)}});
                 show({status: reply.status, location: reply.headers.get("location"), body: reply.data});
             } catch (error) {
                 report(error);
             }
-        };
+            await Promise.all([loadCategories(), loadHolds()]).catch(report);
+        }
 
-        refreshWho();
+        async function loadHolds() {
+            const holds = await readAllPages("/v1/holds");
+            const body = $("holds");
+            body.replaceChildren();
+            for (const h of holds) {
+                const row = body.insertRow();
+                cell(row, h.category_id);
+                cell(row, h.seats);
+                cell(row, h.status);
+                cell(row, h.status === "held" ? when(h.expires_at) : "");
+                cell(row, money(h.total));
+            }
+            $("count").textContent = `Усього: ${holds.length}`;
+        }
+
+        async function enter() {
+            setUser($("user").value.trim());
+            $("who").textContent = "";
+            try {
+                await loadPerformances();
+                await loadHolds();
+                $("who").textContent = `Користувач ${currentUser()}`;
+            } catch (error) {
+                report(error);
+            }
+        }
+
+        $("enter").onclick = enter;
+        $("performance").onchange = () => loadCategories().catch(report);
+        $("reload").onclick = () => Promise.all([loadCategories(), loadHolds()]).catch(report);
+        $("user").value = currentUser() || "usr-alice";
+        enter();
     </script>
 </body>
 </html>

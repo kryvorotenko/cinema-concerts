@@ -61,6 +61,7 @@ services:
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
       JWT_REVOCATION: ${JWT_REVOCATION:-on}
       FAULTS: 'on'
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
       INSTANCE: app-a
     depends_on:
       migrate:
@@ -92,6 +93,7 @@ services:
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
       JWT_REVOCATION: ${JWT_REVOCATION:-on}
       FAULTS: 'on'
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
       INSTANCE: app-b
     depends_on:
       migrate:
@@ -123,6 +125,7 @@ services:
       RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
       JWT_REVOCATION: ${JWT_REVOCATION:-on}
       FAULTS: 'on'
+      WEB_API_TOKEN: ${WEB_API_TOKEN:-dev-token}
       INSTANCE: app-canary
     depends_on:
       migrate:
