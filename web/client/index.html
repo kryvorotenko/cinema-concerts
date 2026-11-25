@@ -1,6 +1,4 @@
 <!doctype html>
-<!-- Web LR1 client (O1.7): choose a user, pick a performance and a category, hold seats, see my holds.
-     Run: python -m http.server 8081 --bind 127.0.0.1 --directory web/client  and open http://localhost:8081 -->
 <html lang="uk">
 <head>
     <meta charset="utf-8">
@@ -52,17 +50,17 @@
     </fieldset>
 
     <h2>Результат останньої дії</h2>
+    <button id="retry" hidden>Повторити з тим самим ключем</button>
     <pre id="out">—</pre>
 
     <script type="module">
-        import {call, currentUser, money, Problem, readAllPages, setUser} from "./api.js";
+        import {call, callIdempotent, currentUser, money, OutcomeUnknown, Problem, readAllPages, setUser} from "./api.js";
 
         const $ = (id) => document.getElementById(id);
         const show = (value, isProblem = false) => {
             $("out").className = isProblem ? "problem" : "";
             $("out").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
         };
-        // Problem Details: status, title and detail are shown; fields we do not know are tolerated
         const report = (error) =>
             show(error instanceof Problem ? {status: error.status, ...error.body} : String(error), true);
         const text = (value) => document.createTextNode(String(value ?? ""));
@@ -96,18 +94,44 @@
                 row.insertCell().appendChild(seats);
                 const button = document.createElement("button");
                 button.textContent = "Утримати";
-                button.onclick = () => hold(c.id, seats.value);
+                button.onclick = () => hold(c.id, seats.value, crypto.randomUUID());
                 row.insertCell().appendChild(button);
             }
         }
 
-        async function hold(categoryId, seats) {
+        let pending = null;
+
+        async function hold(categoryId, seats, key) {
+            const body = {category_id: categoryId, seats: Number(seats)};
             try {
-                // seats must be a JSON number: the server does not accept "2"
-                const reply = await call("POST", "/v1/holds", {body: {category_id: categoryId, seats: Number(seats)}});
-                show({status: reply.status, location: reply.headers.get("location"), body: reply.data});
+                const reply = await callIdempotent("POST", "/v1/holds", {
+                    body,
+                    key,
+                    onRetry: ({attempt, delay, error}) =>
+                        show(`Спроба ${attempt}: ${error.message}. Повтор через ${Math.round(delay)} мс з тим самим ключем`),
+                });
+                pending = null;
+                $("retry").hidden = true;
+                show({
+                    status: reply.status,
+                    location: reply.headers.get("location"),
+                    replayed: reply.headers.get("idempotent-replayed") === "true",
+                    attempts: reply.attempts,
+                    key: reply.key,
+                    body: reply.data,
+                });
             } catch (error) {
-                report(error);
+                if (error instanceof OutcomeUnknown) {
+                    pending = {categoryId, seats, key: error.key};
+                    $("retry").hidden = false;
+                    show(
+                        `Результат невідомий: запит міг виконатися, відповіді немає. Ключ ${error.key}. ` +
+                            "Натисніть «Повторити з тим самим ключем»: утримання не задвоїться.",
+                        true,
+                    );
+                } else {
+                    report(error);
+                }
             }
             await Promise.all([loadCategories(), loadHolds()]).catch(report);
         }
@@ -139,6 +163,7 @@
             }
         }
 
+        $("retry").onclick = () => pending && hold(pending.categoryId, pending.seats, pending.key);
         $("enter").onclick = enter;
         $("performance").onchange = () => loadCategories().catch(report);
         $("reload").onclick = () => Promise.all([loadCategories(), loadHolds()]).catch(report);

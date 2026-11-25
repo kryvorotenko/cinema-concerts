@@ -1,13 +1,3 @@
-"""Ticket check for the DPC service: GET /v1/tickets/{code} (contract: docs/contracts/DPC-LR1.md).
-
-Web issues tickets (Web LR4); DPC only reads them and redeems by ticket_id on its side.
-
-`{code}` is the ticket code. The ticket id is accepted in the same place: the C01 card gives a scan
-only `ticket_id` (no code), so DPC can check such a scan with `GET /v1/tickets/{ticket_id}`. If a value
-is the code of one ticket and the id of another, the code wins; tickets issued in LR4 must keep the two
-formats apart (code `TKT-...`, id a UUID), so that this never happens.
-"""
-
 from typing import Any
 
 from fastapi import APIRouter, Depends

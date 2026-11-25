@@ -1,32 +1,26 @@
-"""Holds of seats of one category (Web LR1: O1.4 main operation, O1.5 list with a cursor).
-
-`bookings` is the project's name for the course's `hold`. Creating a hold is ONE transaction:
-take seats of the category (conditional UPDATE, `available` never goes below 0), insert the hold,
-commit; the response is sent after the commit. Status flow: held -> confirmed | expired | cancelled,
-confirmed -> refunded (only `held` and `expired` are produced in LR1; payment is LR4).
-"""
-
 import asyncio
 import uuid
 from typing import Annotated, Any
 
 import psycopg
 from fastapi import APIRouter, Depends, Query, Response
+from fastapi.responses import JSONResponse
 from psycopg import AsyncConnection
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import config, db
+from . import config, db, idempotency
 from .auth import current_user
+from .faults import fault
 from .formats import decode_cursor, encode_cursor, iso, money
 from .jsonlog import log
 from .problems import Problem
 
 router = APIRouter(tags=["holds"])
 
+OPERATION = "POST /v1/holds"
+
 
 class HoldCreate(BaseModel):
-    # unknown fields (user_id, status, version ...) are rejected: they are not the client's to set;
-    # strict: "2" is not a number of seats, the type is part of the contract
     model_config = ConfigDict(extra="forbid", strict=True)
 
     category_id: str = Field(min_length=1, max_length=64)
@@ -51,13 +45,32 @@ def _view(row: dict[str, Any]) -> dict[str, Any]:
         "version": row["version"],
         "created_at": iso(row["created_at"]),
         "expires_at": iso(row["hold_expires_at"]),
-        # the price is read from the category now; a price snapshot per hold is a later change
         "total": money(row["seats"] * row["price_minor"], row["currency"]),
     }
 
 
+async def _take_seats_unprotected(conn: AsyncConnection, category_id: str, seats: int) -> bool:
+    cur = await conn.execute(
+        """
+        SELECT c.available, c.sales_open
+        FROM seat_categories c JOIN screenings s ON s.id = c.screening_id
+        WHERE c.id = %s AND s.status = 'scheduled' AND s.starts_at > now()
+        """,
+        (category_id,),
+    )
+    row = await cur.fetchone()
+    if row is None or not row["sales_open"] or row["available"] < seats:
+        return False
+    await asyncio.sleep(0)
+    await conn.execute(
+        "UPDATE seat_categories SET available = %s WHERE id = %s", (row["available"] - seats, category_id)
+    )
+    return True
+
+
 async def _take_seats(conn: AsyncConnection, category_id: str, seats: int) -> bool:
-    """The check and the change are one statement: no other request can slip in between."""
+    if config.INVARIANT_MODE == "unprotected":
+        return await _take_seats_unprotected(conn, category_id, seats)
     cur = await conn.execute(
         """
         UPDATE seat_categories c SET available = c.available - %(seats)s
@@ -73,11 +86,6 @@ async def _take_seats(conn: AsyncConnection, category_id: str, seats: int) -> bo
 
 
 async def expire_due(conn: AsyncConnection, category_id: str) -> int:
-    """Holds whose time is up (exactly HOLD_MINUTES counts as expired) give their seats back.
-
-    Rows are locked in id order, so two callers cannot deadlock; a row that the other caller has
-    already expired no longer matches after the wait, so seats are returned once.
-    """
     cur = await conn.execute(
         """
         WITH due AS (
@@ -117,35 +125,43 @@ async def _why_not(conn: AsyncConnection, category_id: str, seats: int) -> Probl
     return Problem(409, "not-enough-seats", "Not enough free seats", f"Requested {seats}, available {row['available']}")
 
 
-async def _create(user: dict[str, Any], body: HoldCreate) -> dict[str, Any]:
-    async with db.connection() as conn, conn.transaction():
+async def _create(conn: AsyncConnection, user: dict[str, Any], body: HoldCreate) -> dict[str, Any]:
+    taken = await _take_seats(conn, body.category_id, body.seats)
+    if not taken and await expire_due(conn, body.category_id):
         taken = await _take_seats(conn, body.category_id, body.seats)
-        if not taken and await expire_due(conn, body.category_id):
-            taken = await _take_seats(conn, body.category_id, body.seats)
-        if not taken:
-            raise await _why_not(conn, body.category_id, body.seats)
+    if not taken:
+        raise await _why_not(conn, body.category_id, body.seats)
 
-        hold_id = str(uuid.uuid4())
-        await conn.execute(
-            """
-            INSERT INTO bookings (id, user_id, screening_id, category_id, seats, holder_name, hold_expires_at)
-            SELECT %s, %s, c.screening_id, c.id, %s, %s, now() + make_interval(mins => %s)
-            FROM seat_categories c WHERE c.id = %s
-            """,
-            (hold_id, user["id"], body.seats, user["display_name"], config.HOLD_MINUTES, body.category_id),
-        )
-        cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s", (hold_id,))
-        return _view(await cur.fetchone())  # type: ignore[arg-type]
+    hold_id = str(uuid.uuid4())
+    await conn.execute(
+        """
+        INSERT INTO bookings (id, user_id, screening_id, category_id, seats, holder_name, hold_expires_at)
+        SELECT %s, %s, c.screening_id, c.id, %s, %s, now() + make_interval(mins => %s)
+        FROM seat_categories c WHERE c.id = %s
+        """,
+        (hold_id, user["id"], body.seats, user["display_name"], config.HOLD_MINUTES, body.category_id),
+    )
+    cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s", (hold_id,))
+    return _view(await cur.fetchone())
 
 
 @router.post("/v1/holds", status_code=201)
 async def create_hold(
-    body: HoldCreate, response: Response, user: Annotated[dict[str, Any], Depends(current_user)]
-) -> dict[str, Any]:
-    hold = await _create(user, body)  # the transaction is committed when this returns
-    response.headers["Location"] = f"/v1/holds/{hold['id']}"
-    response.headers["ETag"] = f'"{hold["version"]}"'
-    return hold
+    body: HoldCreate,
+    user: Annotated[dict[str, Any], Depends(current_user)],
+    key: Annotated[str, Depends(idempotency.key_header)],
+) -> Response:
+    digest = idempotency.fingerprint(body.model_dump())
+    async with db.connection() as conn, conn.transaction():
+        replay = await idempotency.begin(conn, user["id"], key, OPERATION, digest)
+        if replay is not None:
+            return replay.response()
+        hold = await _create(conn, user, body)
+        headers = {"Location": f"/v1/holds/{hold['id']}", "ETag": f'"{hold["version"]}"'}
+        await idempotency.complete(conn, user["id"], key, OPERATION, digest, 201, hold, headers)
+
+    fault("after_commit_before_response")
+    return JSONResponse(hold, status_code=201, headers=headers)
 
 
 @router.get("/v1/holds")
@@ -154,7 +170,6 @@ async def list_holds(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     cursor: str | None = None,
 ) -> dict[str, Any]:
-    """Own holds, newest first, order (created_at, id) descending; next_cursor is opaque."""
     after_time, after_id = decode_cursor(cursor) if cursor else (None, None)
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -183,14 +198,13 @@ async def get_hold(
     async with db.connection() as conn:
         cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s AND b.user_id = %s", (hold_id, user["id"]))
         row = await cur.fetchone()
-    if row is None:  # someone else's hold and a missing one look the same
+    if row is None:
         raise Problem(404, "not-found", "Hold not found")
     response.headers["ETag"] = f'"{row["version"]}"'
     return _view(row)
 
 
 async def sweep_forever() -> None:
-    """Each instance returns seats of expired holds; creating a hold also does it for its category."""
     while True:
         await asyncio.sleep(config.HOLD_SWEEP_S)
         try:

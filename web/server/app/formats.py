@@ -1,5 +1,3 @@
-"""Shared representations: RFC 3339 UTC instants, money in minor units, opaque cursors."""
-
 import base64
 import binascii
 import json
@@ -10,7 +8,6 @@ from .problems import Problem
 
 
 def iso(moment: datetime) -> str:
-    """Instant as RFC 3339 in UTC with milliseconds: 2035-06-01T16:00:00.000Z."""
     return moment.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
@@ -19,7 +16,6 @@ def money(amount_minor: int, currency: str) -> dict[str, Any]:
 
 
 def encode_cursor(created_at: datetime, row_id: str) -> str:
-    """Position after the last row of a page: the sort key (time, id). Opaque for clients."""
     raw = json.dumps({"t": created_at.astimezone(UTC).isoformat(), "i": row_id}, separators=(",", ":"))
     return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 

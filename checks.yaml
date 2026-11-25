@@ -1,13 +1,11 @@
-# Preparation only: no laboratory criteria have been implemented yet.
-# Upstream example contracts describe a library, not topic C01.
-# Replace them with C01 contracts when implementing the laboratories.
+# Web remains a scaffold; DPC LR1 contract is implemented and locally exercised.
 web:
   openapi: web/openapi.yaml
   base: http://localhost:8080
-  items: [О1.5, О1.6]
+  items: [О1.5, О1.6, О2.3, О2.4]
 
 dpc:
-  openapi: dpc/openapi.example.yaml
+  openapi: dpc/openapi.yaml
   base: http://localhost:8000
   items: []
   services:

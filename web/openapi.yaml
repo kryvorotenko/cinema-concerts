@@ -1,10 +1,10 @@
-# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР1.
+# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР2.
 # Маршрути, яких ще немає, сюди не додаються: кожна ЛР доповнює цей файл своїми.
 # x-course позначає роль операції для перевірки: main, list, object.
 openapi: 3.1.0
 info:
   title: C01. Кінотеатри й концерти — Web
-  version: 1.0.0-lr1
+  version: 1.0.0-lr2
   description: |
     Глядач вибирає виконання (концерт або сеанс) і категорію місць, утримує K місць на 10 хвилин.
     Оплата й випуск квитка — ЛР4. Помилки — Problem Details (RFC 9457, `application/problem+json`).
@@ -152,7 +152,16 @@ paths:
       description: |
         Перевірка залишку, зменшення `available` і створення утримання виконуються в одній транзакції;
         відповідь надсилається після commit. Власник — користувач із `X-User-Id`.
+
+        Заголовок `Idempotency-Key` обов'язковий. Той самий ключ і те саме тіло (порядок полів JSON
+        не має значення) повертають збережену відповідь (201 з тим самим `id`, `Location`, `ETag`
+        і заголовком `Idempotent-Replayed: true`); ефект один. Той самий ключ з іншим тілом дає 422.
+        Поки перший запит з цим ключем виконується, повтор отримує 409 `request-in-progress`
+        з `Retry-After`. Ключ належить користувачу й діє 24 години. Невдалі відповіді (409, 422)
+        не зберігаються: повтор обчислюється заново.
       x-course: main
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -182,6 +191,11 @@ paths:
               description: Версія утримання
               schema:
                 type: string
+            Idempotent-Replayed:
+              description: "`true`, якщо це збережена відповідь на повторний запит із тим самим ключем"
+              schema:
+                type: string
+                enum: ["true"]
           content:
             application/json:
               schema:
@@ -204,9 +218,11 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/ConflictOrInProgress"
         "422":
-          $ref: "#/components/responses/Unprocessable"
+          $ref: "#/components/responses/UnprocessableOrKeyReused"
+        "503":
+          $ref: "#/components/responses/Overloaded"
     get:
       tags: [holds]
       operationId: listHolds
@@ -313,6 +329,19 @@ components:
       description: Сервісний токен DPC (WEB_API_TOKEN)
 
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Ключ операції, 1..255 видимих символів ASCII без пропусків (наприклад, UUID). Один ключ на одну
+        дію користувача; усі повтори цієї дії надсилають той самий ключ. Без ключа — 400.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: "^[\\x21-\\x7e]+$"
+      example: 4b0f6c3a-6a0e-4b0d-9a4b-6f1c2c9a1e11
     Id:
       name: id
       in: path
@@ -355,16 +384,25 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     BadRequest:
-      description: Тіло не є коректним JSON або зіпсований курсор
+      description: |
+        Тіло не є коректним JSON, зіпсований курсор, немає або хибний `Idempotency-Key`
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
-          example:
-            type: https://example.edu/problems/malformed-json
-            title: Request body is not valid JSON
-            status: 400
-            instance: /v1/holds
+          examples:
+            malformed:
+              value:
+                type: https://example.edu/problems/malformed-json
+                title: Request body is not valid JSON
+                status: 400
+                instance: /v1/holds
+            keyRequired:
+              value:
+                type: https://example.edu/problems/idempotency-key-required
+                title: Idempotency-Key header is required
+                status: 400
+                instance: /v1/holds
     Unauthenticated:
       description: Немає або невідомий користувач (сервісний токен)
       content:
@@ -377,20 +415,65 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
-    Conflict:
+    ConflictOrInProgress:
       description: |
-        Місць недостатньо (`not-enough-seats`), продаж категорії закрито (`sales-closed`)
-        або виконання не продається (`performance-unavailable`)
+        Місць недостатньо (`not-enough-seats`), продаж категорії закрито (`sales-closed`),
+        виконання не продається (`performance-unavailable`) або запит з цим ключем ще виконується
+        (`request-in-progress`, є `Retry-After`: повторіть той самий запит)
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
-          example:
-            type: https://example.edu/problems/not-enough-seats
-            title: Not enough free seats
-            status: 409
-            detail: Requested 6, available 5
-            instance: /v1/holds
+          examples:
+            notEnoughSeats:
+              value:
+                type: https://example.edu/problems/not-enough-seats
+                title: Not enough free seats
+                status: 409
+                detail: Requested 6, available 5
+                instance: /v1/holds
+            inProgress:
+              value:
+                type: https://example.edu/problems/request-in-progress
+                title: A request with this Idempotency-Key is still being processed
+                status: 409
+                detail: Repeat the same request after the time in Retry-After
+                instance: /v1/holds
+    UnprocessableOrKeyReused:
+      description: |
+        Коректний JSON із хибними даними (`invalid-request`) або той самий `Idempotency-Key`,
+        уже використаний з іншим тілом (`idempotency-key-reused`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            invalid:
+              value:
+                type: https://example.edu/problems/invalid-request
+                title: Invalid request data
+                status: 422
+                errors: [{field: body.seats, message: Input should be greater than or equal to 1}]
+                instance: /v1/holds
+            keyReused:
+              value:
+                type: https://example.edu/problems/idempotency-key-reused
+                title: Idempotency-Key was already used with a different request
+                status: 422
+                detail: Use a new key for a different request body
+                instance: /v1/holds
+    Overloaded:
+      description: Усі з'єднання з базою зайняті; робота не починалась, повторіть після `Retry-After`
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     Unprocessable:
       description: |
         Коректний JSON із хибними даними: відсутнє або чуже поле, неціле `seats`, `seats` поза 1..10,

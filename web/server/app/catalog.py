@@ -1,9 +1,3 @@
-"""Programme and categories (Web LR1, read side).
-
-`/v1/events` lists PERFORMANCES: the id is `screenings.id`, i.e. the shared `performance_id` of the
-team contract; `event_id` is the programme item (film or concert) the performance belongs to.
-"""
-
 from typing import Any
 
 from fastapi import APIRouter, Depends

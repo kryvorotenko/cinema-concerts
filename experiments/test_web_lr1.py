@@ -1,15 +1,7 @@
-"""Web LR1 checks against a running stack (default http://localhost:8080) and the seeded demo data.
-
-    python experiments/test_web_lr1.py                    # through nginx
-    BASES=http://localhost:8001,http://localhost:8002 python experiments/test_web_lr1.py
-
-Needs only `httpx`. Run web_lr1_reset.sql before a repeat. Every line printed is an assertion that
-passed; the first failure stops the run with the response that broke it.
-"""
-
 import asyncio
 import os
 import re
+import uuid
 
 import httpx
 
@@ -18,6 +10,11 @@ ALICE = {"X-User-Id": "usr-alice"}
 BOB = {"X-User-Id": "usr-bob"}
 SERVICE = {"Authorization": "Bearer " + os.environ.get("WEB_API_TOKEN", "dev-token")}
 PROBLEM = "application/problem+json"
+
+
+def fresh(headers: dict[str, str]) -> dict[str, str]:
+    return {**headers, "Idempotency-Key": uuid.uuid4().hex}
+
 passed = 0
 
 
@@ -55,9 +52,8 @@ async def main() -> None:
               "categories carry price as integer minor units + currency", r)
         check(is_problem(await c.get("/v1/events/no-such/categories", headers=ALICE), 404), "unknown performance -> 404")
 
-        # --- O1.4 main operation
         before = cats["cat-jazz-std"]["available"]
-        r = await c.post("/v1/holds", headers=ALICE, json={"category_id": "cat-jazz-std", "seats": 2})
+        r = await c.post("/v1/holds", headers=fresh(ALICE), json={"category_id": "cat-jazz-std", "seats": 2})
         check(r.status_code == 201 and r.headers["location"] == f"/v1/holds/{r.json()['id']}", "POST /v1/holds -> 201 + Location", r)
         hold = r.json()
         check(hold["status"] == "held" and hold["seats"] == 2 and hold["version"] == 1 and isinstance(hold["id"], str),
@@ -71,25 +67,24 @@ async def main() -> None:
         check(is_problem(r, 404), "someone else's hold -> 404 (same as a missing one)", r)
         check(is_problem(await c.get("/v1/holds/missing", headers=ALICE), 404), "missing hold -> 404")
 
-        r = await c.post("/v1/holds", headers={**ALICE, "Content-Type": "application/json"}, content=b'{"category_id": ')
+        r = await c.post("/v1/holds", headers=fresh({**ALICE, "Content-Type": "application/json"}), content=b'{"category_id": ')
         check(is_problem(r, 400), "broken JSON -> 400", r)
         for bad in ({"category_id": "cat-jazz-std", "seats": 0}, {"category_id": "cat-jazz-std", "seats": "2"},
                     {"category_id": "cat-jazz-std"}, {"seats": 1},
                     {"category_id": "cat-jazz-std", "seats": 1, "user_id": "usr-bob"},
                     {"category_id": "cat-jazz-std", "seats": 1, "status": "confirmed"}):
-            r = await c.post("/v1/holds", headers=ALICE, json=bad)
+            r = await c.post("/v1/holds", headers=fresh(ALICE), json=bad)
             check(is_problem(r, 422), f"invalid data {bad} -> 422", r)
-        check(is_problem(await c.post("/v1/holds", headers=ALICE, json={"category_id": "no-such", "seats": 1}), 404),
+        check(is_problem(await c.post("/v1/holds", headers=fresh(ALICE), json={"category_id": "no-such", "seats": 1}), 404),
               "unknown category -> 404")
-        r = await c.post("/v1/holds", headers=ALICE, json={"category_id": "cat-scarce", "seats": 6})
+        r = await c.post("/v1/holds", headers=fresh(ALICE), json={"category_id": "cat-scarce", "seats": 6})
         check(is_problem(r, 409) and r.json()["type"].endswith("not-enough-seats"), "more seats than available -> 409", r)
-        r = await c.post("/v1/holds", headers=ALICE, json={"category_id": "cat-closed", "seats": 1})
+        r = await c.post("/v1/holds", headers=fresh(ALICE), json={"category_id": "cat-closed", "seats": 1})
         check(is_problem(r, 409) and r.json()["type"].endswith("sales-closed"), "sales closed -> 409", r)
 
-        # --- O1.5 list with a cursor: create 5 holds as Bob, read them back page by page
         ids = []
         for _ in range(5):
-            r = await c.post("/v1/holds", headers=BOB, json={"category_id": "cat-film-std", "seats": 1})
+            r = await c.post("/v1/holds", headers=fresh(BOB), json={"category_id": "cat-film-std", "seats": 1})
             ids.append(r.json()["id"])
         seen, cursor, pages = [], None, 0
         while True:
@@ -99,7 +94,6 @@ async def main() -> None:
             cursor, pages = r.json()["next_cursor"], pages + 1
             if cursor is None:
                 break
-        # Bob also owns the seeded refunded booking bk-demo-2, which is the oldest
         check(seen == ids[::-1] + ["bk-demo-2"] and pages == 3,
               "all pages together = my holds, newest first, none repeated or lost")
         check(hold["id"] not in seen, "the list shows only my own holds")
@@ -110,7 +104,6 @@ async def main() -> None:
         for limit in (0, 51):
             check(is_problem(await c.get("/v1/holds", headers=BOB, params={"limit": limit}), 422), f"limit={limit} -> 422")
 
-        # --- DPC integration: ticket check by service token
         r = await c.get("/v1/tickets/TKT-DEMO-0001", headers=SERVICE)
         check(r.status_code == 200 and r.json() == {"ticket_id": "tkt-demo-1", "performance_id": "scr-jazz-1", "valid": True},
               "GET /v1/tickets/{code} -> ticket_id, performance_id, valid=true", r)
@@ -126,10 +119,9 @@ async def main() -> None:
         check(is_problem(await c.get("/v1/tickets/TKT-DEMO-0001"), 401), "ticket check without service token -> 401")
         check(is_problem(await c.get("/v1/tickets/TKT-DEMO-0001", headers=ALICE), 401), "a user header is not a service token -> 401")
 
-    # --- smoke only (the real experiment is LR2 O2.1): 20 parallel holds on 5 seats through all instances
     async def hold(base: str) -> int:
         async with httpx.AsyncClient(base_url=base, timeout=15) as c:
-            return (await c.post("/v1/holds", headers=ALICE, json={"category_id": "cat-scarce", "seats": 1})).status_code
+            return (await c.post("/v1/holds", headers=fresh(ALICE), json={"category_id": "cat-scarce", "seats": 1})).status_code
 
     codes = await asyncio.gather(*(hold(BASES[i % len(BASES)]) for i in range(20)))
     async with httpx.AsyncClient(base_url=BASES[0], timeout=15) as c:

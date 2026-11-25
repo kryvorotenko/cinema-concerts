@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from psycopg_pool import PoolTimeout
 from starlette.exceptions import HTTPException
 
 from . import config
@@ -54,6 +55,17 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(Problem)
     async def on_problem(request: Request, exc: Problem) -> JSONResponse:
         return exc.response(request.url.path)
+
+    @app.exception_handler(PoolTimeout)
+    async def on_overload(request: Request, exc: PoolTimeout) -> JSONResponse:
+        problem = Problem(
+            503,
+            "overloaded",
+            "Service is busy",
+            "No database connection became free in time; repeat the request",
+            headers={"Retry-After": "1"},
+        )
+        return problem.response(request.url.path)
 
     @app.exception_handler(HTTPException)
     async def on_http(request: Request, exc: HTTPException) -> JSONResponse:

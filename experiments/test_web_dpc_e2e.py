@@ -1,15 +1,3 @@
-"""Web <-> DPC end to end: the DPC scan queue checks tickets through the Web ticket API.
-
-Needs the whole stack with DPC in its default TICKET_CHECK_MODE=web (docker compose up -d --build),
-the Web demo data (migration 020) and the e2e sectors:
-
-    Get-Content -Raw experiments/web_dpc_e2e_prepare.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
-    python experiments/test_web_dpc_e2e.py
-
-Run the prepare script again before every repeat. Environment: DPC_BASE (default http://localhost:8000),
-API_TOKEN (default dev-token). Needs only `httpx`.
-"""
-
 import os
 import sys
 import time

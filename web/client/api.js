@@ -1,14 +1,19 @@
-// Calls to the system through nginx: base address, current user (X-User-Id until Web LR3), Problem Details.
-// Serve the client outside Compose:  python -m http.server 8081 --bind 127.0.0.1 --directory web/client
-// The origin 127.0.0.1:8081 is not the allowed CLIENT_ORIGIN: open http://localhost:8081 instead.
-
 export const API = localStorage.getItem("api") ?? "http://localhost:8080";
 
 export class Problem extends Error {
-    constructor(status, body) {
+    constructor(status, body, retryAfter = null) {
         super(body?.title ?? `HTTP ${status}`);
         this.status = status;
         this.body = body;
+        this.retryAfter = retryAfter;
+    }
+}
+
+export class OutcomeUnknown extends Error {
+    constructor(key, last) {
+        super("Результат невідомий");
+        this.key = key;
+        this.last = last;
     }
 }
 
@@ -34,20 +39,65 @@ export async function call(method, path, {body, headers = {}} = {}) {
             body: body !== undefined ? JSON.stringify(body) : undefined,
         });
     } catch (error) {
-        // no answer at all: the request may or may not have been executed
         throw new Problem(0, {title: "Немає відповіді від сервера", detail: String(error)});
     }
 
     const type = reply.headers.get("content-type") ?? "";
     const data = type.includes("json") ? await reply.json() : await reply.text();
     if (!reply.ok) {
-        throw new Problem(reply.status, typeof data === "object" ? data : {title: data});
+        const retryAfter = Number(reply.headers.get("retry-after"));
+        throw new Problem(
+            reply.status,
+            typeof data === "object" ? data : {title: data},
+            Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+        );
     }
 
     return {status: reply.status, headers: reply.headers, data};
 }
 
-// O1.5 on the client: follow next_cursor until it is null, so that no page is missed.
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isInProgress = (error) => error.status === 409 && String(error.body?.type ?? "").endsWith("request-in-progress");
+
+export async function callIdempotent(
+    method,
+    path,
+    {body, key = crypto.randomUUID(), maxAttempts = 5, maxTimeMs = 20000, baseMs = 400, capMs = 5000, onRetry} = {},
+) {
+    const started = Date.now();
+    let last = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const reply = await call(method, path, {body, headers: {"Idempotency-Key": key}});
+            return {...reply, key, attempts: attempt};
+        } catch (error) {
+            if (!(error instanceof Problem)) {
+                throw error;
+            }
+            last = error;
+            const retryable = [0, 502, 503, 504].includes(error.status) || isInProgress(error);
+            if (!retryable) {
+                throw error;
+            }
+            if (attempt === maxAttempts) {
+                break;
+            }
+            const backoff = Math.random() * Math.min(capMs, baseMs * 2 ** (attempt - 1));
+            const delay = Math.max(backoff, (error.retryAfter ?? 0) * 1000);
+            if (Date.now() - started + delay > maxTimeMs) {
+                break;
+            }
+            onRetry?.({attempt, delay, error});
+            await sleep(delay);
+        }
+    }
+    if (last.status === 503) {
+        throw last;
+    }
+    throw new OutcomeUnknown(key, last);
+}
+
 export async function readAllPages(path, limit = 20) {
     const items = [];
     let cursor = null;

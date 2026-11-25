@@ -38,6 +38,10 @@ fencing_token в bookings зарезервовано за запитом ком�
 
 ## Kafka
 
+DPC ЛР1 додала `migrations/010_dpc_scans.sql`, HTTP API та окремий контракт
+[DPC-LR1.md](DPC-LR1.md). Web ticket API іще очікує реалізацію учасника 1;
+саме він підтвердить формат сервісної відповіді.
+
 | Топік | Константа | Ключ повідомлення | Призначення |
 |---|---|---|---|
 | domain-events | TOPIC_DOMAIN_EVENTS | aggregate_id | Web ЛР4: hold.created/payment.requested/payment.succeeded/payment.failed/event.rescheduled |
@@ -68,6 +72,12 @@ replication factor 1. Для керованого досліду О5.3 до пе
 маршрути — [web/openapi.yaml](../../web/openapi.yaml). Міграція `020_web_demo_seed.sql` лише додає демоданні.
 `GET /v1/tickets/{code}` приймає код квитка або `ticket_id`. Пропозиція нумерації міграцій за учасниками
 (ще не прийнята командою) — у WEB-LR1.md.
+
+## Web ЛР2
+
+Інваріант `available` за одночасних запитів, обов'язковий `Idempotency-Key` для `POST /v1/holds`, відмова
+`after_commit_before_response` і повтор на клієнті: [WEB-LR2.md](WEB-LR2.md). Міграція `021_web_idempotency.sql` додає
+таблицю `idempotency_keys`; таблиці `operations` ЛР4 вона не замінює.
 
 ## Порти й спільні конфіги
 
