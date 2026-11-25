@@ -21,13 +21,19 @@
     <h1>Кінотеатри й концерти</h1>
 
     <fieldset>
-        <legend>Користувач</legend>
-        <label>Ідентифікатор (до входу з паролем у ЛР3)
-            <input id="user" list="users" value="usr-alice">
-            <datalist id="users"><option value="usr-alice"><option value="usr-bob"><option value="usr-staff"></datalist>
+        <legend>Вхід</legend>
+        <label>Логін (e-mail)
+            <input id="login" list="logins" value="alice@example.invalid" autocomplete="username">
+            <datalist id="logins">
+                <option value="alice@example.invalid">
+                <option value="bob@example.invalid">
+                <option value="staff@example.invalid">
+            </datalist>
         </label>
+        <label>Пароль <input id="password" type="password" autocomplete="current-password"></label>
         <button id="enter">Увійти</button>
-        <span id="who" class="muted"></span>
+        <button id="leave">Вийти</button>
+        <span id="who" class="muted">Ви не ввійшли</span>
     </fieldset>
 
     <fieldset>
@@ -43,10 +49,21 @@
         <legend>Мої утримання</legend>
         <button id="reload">Оновити</button>
         <table>
-            <thead><tr><th>Категорія</th><th>Місць</th><th>Статус</th><th>До</th><th>Сума</th></tr></thead>
+            <thead><tr><th>Id</th><th>Категорія</th><th>Місць</th><th>Статус</th><th>До</th><th>Сума</th></tr></thead>
             <tbody id="holds"></tbody>
         </table>
         <p id="count" class="muted"></p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Перевірка доступу</legend>
+        <label>Id утримання (можна чужого) <input id="holdId" size="40"></label>
+        <label>Нове ім'я власника <input id="holderName" value="Нове Ім'я"></label>
+        <button id="readHold">Прочитати утримання</button>
+        <button id="renameHold">Змінити ім'я</button>
+        <label>Категорія <input id="categoryId" value="cat-jazz-std"></label>
+        <button id="closeSales">Закрити продаж (персонал)</button>
+        <button id="openSales">Відкрити продаж (персонал)</button>
     </fieldset>
 
     <h2>Результат останньої дії</h2>
@@ -54,7 +71,7 @@
     <pre id="out">—</pre>
 
     <script type="module">
-        import {call, callIdempotent, currentUser, money, OutcomeUnknown, Problem, readAllPages, setUser} from "./api.js";
+        import {call, callIdempotent, login, logout, me, money, OutcomeUnknown, Problem, readAllPages} from "./api.js";
 
         const $ = (id) => document.getElementById(id);
         const show = (value, isProblem = false) => {
@@ -142,6 +159,7 @@
             body.replaceChildren();
             for (const h of holds) {
                 const row = body.insertRow();
+                cell(row, h.id);
                 cell(row, h.category_id);
                 cell(row, h.seats);
                 cell(row, h.status);
@@ -151,24 +169,64 @@
             $("count").textContent = `Усього: ${holds.length}`;
         }
 
+        function signedOut(message) {
+            $("who").textContent = message;
+            $("categories").replaceChildren();
+            $("holds").replaceChildren();
+            $("performance").replaceChildren();
+            $("count").textContent = "";
+        }
+
+        async function start(person) {
+            $("who").textContent = `${person.name}, роль: ${person.role}`;
+            await loadPerformances();
+            await loadHolds();
+        }
+
         async function enter() {
-            setUser($("user").value.trim());
-            $("who").textContent = "";
             try {
-                await loadPerformances();
-                await loadHolds();
-                $("who").textContent = `Користувач ${currentUser()}`;
+                const {data} = await login($("login").value.trim(), $("password").value);
+                $("password").value = "";
+                await start(data);
+                show({status: 200, person: data});
+            } catch (error) {
+                signedOut("Ви не ввійшли");
+                report(error);
+            }
+        }
+
+        async function leave() {
+            try {
+                const reply = await logout();
+                signedOut("Ви вийшли");
+                show({status: reply.status, message: "Сесію видалено на сервері"});
             } catch (error) {
                 report(error);
             }
         }
 
+        const holdUrl = () => `/v1/holds/${encodeURIComponent($("holdId").value.trim())}`;
+        const categoryUrl = (action) => `/v1/categories/${encodeURIComponent($("categoryId").value.trim())}/${action}`;
+        const attempt = (run) => async () => {
+            try {
+                const reply = await run();
+                show({status: reply.status, etag: reply.headers.get("etag"), body: reply.data});
+            } catch (error) {
+                report(error);
+            }
+            await Promise.all([loadCategories(), loadHolds()]).catch(() => {});
+        };
+
+        $("readHold").onclick = attempt(() => call("GET", holdUrl()));
+        $("renameHold").onclick = attempt(() => call("PATCH", holdUrl(), {body: {holder_name: $("holderName").value}}));
+        $("closeSales").onclick = attempt(() => call("POST", categoryUrl("close-sales")));
+        $("openSales").onclick = attempt(() => call("POST", categoryUrl("open-sales")));
         $("retry").onclick = () => pending && hold(pending.categoryId, pending.seats, pending.key);
         $("enter").onclick = enter;
+        $("leave").onclick = leave;
         $("performance").onchange = () => loadCategories().catch(report);
         $("reload").onclick = () => Promise.all([loadCategories(), loadHolds()]).catch(report);
-        $("user").value = currentUser() || "usr-alice";
-        enter();
+        me().then(({data}) => start(data)).catch(() => signedOut("Ви не ввійшли"));
     </script>
 </body>
 </html>

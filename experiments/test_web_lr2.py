@@ -11,9 +11,20 @@ import httpx
 BASES = os.environ.get("BASES", os.environ.get("BASE", "http://localhost:8080")).split(",")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 BUYERS = int(os.environ.get("BUYERS", "300"))
-USERS = [{"X-User-Id": "usr-alice"}, {"X-User-Id": "usr-bob"}, {"X-User-Id": "usr-staff"}]
-ALICE, BOB = USERS[0], USERS[1]
 PROBLEM = "application/problem+json"
+
+
+def session(login: str, password: str) -> dict[str, str]:
+    reply = httpx.post(BASES[0] + "/v1/auth/login", json={"login": login, "password": password}, timeout=15)
+    reply.raise_for_status()
+    return {"Cookie": f"session={reply.cookies['session']}"}
+
+USERS = [
+    session("alice@example.invalid", "alice-pass"),
+    session("bob@example.invalid", "bob-pass"),
+    session("staff@example.invalid", "staff-pass"),
+]
+ALICE, BOB = USERS[0], USERS[1]
 passed = 0
 
 

@@ -79,6 +79,12 @@ replication factor 1. Для керованого досліду О5.3 до пе
 `after_commit_before_response` і повтор на клієнті: [WEB-LR2.md](WEB-LR2.md). Міграція `021_web_idempotency.sql` додає
 таблицю `idempotency_keys`; таблиці `operations` ЛР4 вона не замінює.
 
+## Web ЛР3
+
+Вхід за паролем, сесія в cookie, власник об'єкта лише з сесії, роль персоналу й захист від міжсайтового запиту:
+[WEB-LR3.md](WEB-LR3.md). Міграція `022_web_sessions.sql` додає таблицю `sessions` і хеші демопаролів. Заголовок
+`X-User-Id` більше не приймається; маршрут `GET /v1/tickets/{code}` для DPC лишається під сервісним токеном.
+
 ## Порти й спільні конфіги
 
 Повний виконуваний список — `docker-compose.yml`; всі його змінні — `.env.example`.

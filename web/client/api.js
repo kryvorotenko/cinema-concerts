@@ -17,23 +17,14 @@ export class OutcomeUnknown extends Error {
     }
 }
 
-let userId = sessionStorage.getItem("user") ?? "";
-
-export function setUser(value) {
-    userId = value;
-    sessionStorage.setItem("user", value);
-}
-
-export const currentUser = () => userId;
-
 export async function call(method, path, {body, headers = {}} = {}) {
     let reply;
     try {
         reply = await fetch(API + path, {
             method,
+            credentials: "include",
             headers: {
                 ...(body !== undefined ? {"Content-Type": "application/json"} : {}),
-                ...(userId ? {"X-User-Id": userId} : {}),
                 ...headers,
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -43,7 +34,8 @@ export async function call(method, path, {body, headers = {}} = {}) {
     }
 
     const type = reply.headers.get("content-type") ?? "";
-    const data = type.includes("json") ? await reply.json() : await reply.text();
+    const raw = await reply.text();
+    const data = type.includes("json") && raw ? JSON.parse(raw) : raw;
     if (!reply.ok) {
         const retryAfter = Number(reply.headers.get("retry-after"));
         throw new Problem(
@@ -55,6 +47,12 @@ export async function call(method, path, {body, headers = {}} = {}) {
 
     return {status: reply.status, headers: reply.headers, data};
 }
+
+export const login = (loginName, password) => call("POST", "/v1/auth/login", {body: {login: loginName, password}});
+
+export const logout = () => call("POST", "/v1/auth/logout");
+
+export const me = () => call("GET", "/v1/me");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

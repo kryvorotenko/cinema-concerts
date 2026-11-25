@@ -4,3 +4,5 @@ extends:
 rules:
   # the stand is local by design: nginx on localhost:8080
   no-server-example.com: off
+  # the update example `forbidden` deliberately carries fields the schema rejects
+  no-invalid-media-type-examples: off

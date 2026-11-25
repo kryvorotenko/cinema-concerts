@@ -1,10 +1,10 @@
-# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР2.
+# Контракт Web (OpenAPI 3.1), C01 «Кінотеатри й концерти». Стан: ЛР3.
 # Маршрути, яких ще немає, сюди не додаються: кожна ЛР доповнює цей файл своїми.
 # x-course позначає роль операції для перевірки: main, list, object.
 openapi: 3.1.0
 info:
   title: C01. Кінотеатри й концерти — Web
-  version: 1.0.0-lr2
+  version: 1.0.0-lr3
   description: |
     Глядач вибирає виконання (концерт або сеанс) і категорію місць, утримує K місць на 10 хвилин.
     Оплата й випуск квитка — ЛР4. Помилки — Problem Details (RFC 9457, `application/problem+json`).
@@ -12,7 +12,8 @@ info:
     Моменти — RFC 3339 у UTC. `performance_id` — це `screenings.id`; у цьому API
     «подія» з маршруту `/v1/events` є виконанням (performance).
 
-    До ЛР3 користувач визначається заголовком `X-User-Id`; власник об'єкта береться лише з нього.
+    Користувач визначається cookie сесії `session` (HttpOnly, SameSite=Lax), яку видає `POST /v1/auth/login`.
+    Власник об'єкта береться лише з сесії. Зміни приймаються лише з дозволеного origin клієнта (`CLIENT_ORIGIN`).
   license:
     name: MIT
     identifier: MIT
@@ -20,11 +21,13 @@ servers:
   - url: http://localhost:8080
     description: nginx (app-a, app-b)
 security:
-  - userHeader: []
+  - sessionCookie: []
 
 tags:
   - name: service
     description: Службові маршрути, однакові для всіх тем
+  - name: auth
+    description: Вхід, вихід і поточна особа
   - name: catalog
     description: Виконання та категорії місць
   - name: holds
@@ -33,6 +36,83 @@ tags:
     description: Перевірка квитка сервісом DPC
 
 paths:
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вхід
+      description: |
+        `login` — e-mail користувача (регістр не важливий). Сесія видається cookie `session`
+        (HttpOnly, SameSite=Lax, Path=/, Max-Age 3600 с); токена в тілі немає. Невідомий логін і хибний пароль
+        дають однакову відповідь 401. Зміни приймаються лише з дозволеного origin клієнта, інакше 403.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+            examples:
+              user:
+                value: {login: alice@example.invalid, password: alice-pass}
+              staff:
+                value: {login: staff@example.invalid, password: staff-pass}
+      responses:
+        "200":
+          description: Вхід виконано, cookie `session` встановлено
+          headers:
+            Set-Cookie:
+              description: "`session=<непрозорий токен>; HttpOnly; SameSite=Lax; Path=/; Max-Age=3600`"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Хибний логін або пароль
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://example.edu/problems/invalid-credentials
+                title: Invalid login or password
+                status: 401
+                instance: /v1/auth/login
+        "403":
+          $ref: "#/components/responses/ForeignOrigin"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Вихід
+      description: Сесію видалено на сервері, тому старий cookie більше не діє на жодному екземплярі.
+      responses:
+        "204":
+          description: Вихід виконано, cookie очищено
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForeignOrigin"
+  /v1/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Поточна особа й роль
+      responses:
+        "200":
+          description: Поточний користувач
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
   /health:
     get:
       tags: [service]
@@ -151,7 +231,7 @@ paths:
       summary: Утримати місця категорії на 10 хвилин
       description: |
         Перевірка залишку, зменшення `available` і створення утримання виконуються в одній транзакції;
-        відповідь надсилається після commit. Власник — користувач із `X-User-Id`.
+        відповідь надсилається після commit. Власник — користувач сесії.
 
         Заголовок `Idempotency-Key` обов'язковий. Той самий ключ і те саме тіло (порядок полів JSON
         не має значення) повертають збережену відповідь (201 з тим самим `id`, `Location`, `ETag`
@@ -255,6 +335,55 @@ paths:
         "422":
           $ref: "#/components/responses/Unprocessable"
   /v1/holds/{id}:
+    patch:
+      tags: [holds]
+      operationId: updateHold
+      summary: Змінити ім'я власника утримання
+      description: |
+        Лише власник і лише для `held` та `confirmed`. Інші поля (`user_id`, `status`, `version`, `seats`,
+        `category_id`) не змінюються: їхня поява в тілі дає 422. Чуже й неіснуюче утримання — однаковий 404.
+      x-course: update
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoldPatch"
+            examples:
+              normal:
+                value: {holder_name: Олена Мельник}
+              forbidden:
+                value: {holder_name: Олена Мельник, user_id: usr-bob, status: confirmed, version: 99}
+      responses:
+        "200":
+          description: Ім'я змінено, `version` збільшено
+          headers:
+            ETag:
+              description: Нова версія утримання
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hold"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForeignOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Утримання вже не можна змінити (`hold-not-editable`, статуси expired, cancelled, refunded)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
     get:
       tags: [holds]
       operationId: getHold
@@ -277,6 +406,49 @@ paths:
                 $ref: "#/components/schemas/Hold"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/categories/{id}/close-sales:
+    post:
+      tags: [catalog]
+      operationId: closeSales
+      summary: Закрити продаж категорії (персонал)
+      description: Лише роль `staff`. Користувач отримує 403, навіть якщо категорії немає. Наявні утримання лишаються.
+      x-course: staff-action
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "Продаж закрито (`sales_open: false`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrForeignOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/categories/{id}/open-sales:
+    post:
+      tags: [catalog]
+      operationId: openSales
+      summary: Відкрити продаж категорії (персонал)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: "Продаж відкрито (`sales_open: true`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrForeignOrigin"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -318,11 +490,11 @@ paths:
 
 components:
   securitySchemes:
-    userHeader:
+    sessionCookie:
       type: apiKey
-      in: header
-      name: X-User-Id
-      description: До ЛР3. Ідентифікатор наявного користувача (usr-alice, usr-bob, usr-staff)
+      in: cookie
+      name: session
+      description: Сесія з `POST /v1/auth/login`
     serviceToken:
       type: http
       scheme: bearer
@@ -403,8 +575,40 @@ components:
                 title: Idempotency-Key header is required
                 status: 400
                 instance: /v1/holds
+    ForeignOrigin:
+      description: |
+        Змінюючий запит із чужого origin (`csrf-rejected`): відхилено до будь-якої дії.
+        Дозволено лише `CLIENT_ORIGIN` або запит без `Origin` і без `Sec-Fetch-Site` (не браузер)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://example.edu/problems/csrf-rejected
+            title: Request from a foreign origin
+            status: 403
+            instance: /v1/holds
+    ForbiddenOrForeignOrigin:
+      description: Потрібна роль `staff` (`forbidden`) або запит із чужого origin (`csrf-rejected`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            forbidden:
+              value:
+                type: https://example.edu/problems/forbidden
+                title: Staff role required
+                status: 403
+                instance: /v1/categories/cat-jazz-std/close-sales
+            foreignOrigin:
+              value:
+                type: https://example.edu/problems/csrf-rejected
+                title: Request from a foreign origin
+                status: 403
+                instance: /v1/categories/cat-jazz-std/close-sales
     Unauthenticated:
-      description: Немає або невідомий користувач (сервісний токен)
+      description: Немає сесії, вона невідома чи прострочена (для сервісного маршруту — токен)
       content:
         application/problem+json:
           schema:
@@ -490,6 +694,42 @@ components:
             instance: /v1/holds
 
   schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [login, password]
+      properties:
+        login:
+          type: string
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 256
+    Person:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [user, staff]
+    HoldPatch:
+      type: object
+      additionalProperties: false
+      required: [holder_name]
+      properties:
+        holder_name:
+          type: string
+          minLength: 1
+          maxLength: 100
     Problem:
       type: object
       required: [type, title, status]

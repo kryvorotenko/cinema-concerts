@@ -6,10 +6,17 @@ import uuid
 import httpx
 
 BASES = os.environ.get("BASES", os.environ.get("BASE", "http://localhost:8080")).split(",")
-ALICE = {"X-User-Id": "usr-alice"}
-BOB = {"X-User-Id": "usr-bob"}
 SERVICE = {"Authorization": "Bearer " + os.environ.get("WEB_API_TOKEN", "dev-token")}
 PROBLEM = "application/problem+json"
+
+
+def session(login: str, password: str) -> dict[str, str]:
+    reply = httpx.post(BASES[0] + "/v1/auth/login", json={"login": login, "password": password}, timeout=15)
+    reply.raise_for_status()
+    return {"Cookie": f"session={reply.cookies['session']}"}
+
+ALICE = session("alice@example.invalid", "alice-pass")
+BOB = session("bob@example.invalid", "bob-pass")
 
 
 def fresh(headers: dict[str, str]) -> dict[str, str]:
@@ -40,9 +47,9 @@ async def main() -> None:
         check(r.headers.get("x-request-id") == "my-id-1", "O1.6 a sane incoming X-Request-ID is returned as is", r)
 
         r = await c.get("/v1/events")
-        check(is_problem(r, 401), "no X-User-Id -> 401 Problem Details", r)
+        check(is_problem(r, 401), "no session -> 401 Problem Details", r)
         r = await c.get("/v1/events", headers={"X-User-Id": "nobody"})
-        check(is_problem(r, 401), "unknown user -> 401", r)
+        check(is_problem(r, 401), "unknown X-User-Id is not an identity -> 401", r)
 
         events = (await c.get("/v1/events", headers=ALICE)).json()["items"]
         check(any(e["id"] == "scr-jazz-1" for e in events), "GET /v1/events lists performances (id = performance_id)")

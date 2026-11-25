@@ -20,6 +20,12 @@ router = APIRouter(tags=["holds"])
 OPERATION = "POST /v1/holds"
 
 
+class HoldPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    holder_name: str = Field(min_length=1, max_length=100)
+
+
 class HoldCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -189,6 +195,35 @@ async def list_holds(
         "items": [_view(r) for r in page],
         "next_cursor": encode_cursor(page[-1]["created_at"], page[-1]["id"]) if more else None,
     }
+
+
+@router.patch("/v1/holds/{hold_id}")
+async def update_hold(
+    hold_id: str, body: HoldPatch, response: Response, user: Annotated[dict[str, Any], Depends(current_user)]
+) -> dict[str, Any]:
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """
+            UPDATE bookings SET holder_name = %s, version = version + 1
+            WHERE id = %s AND user_id = %s AND status IN ('held', 'confirmed')
+            RETURNING id
+            """,
+            (body.holder_name, hold_id, user["id"]),
+        )
+        if await cur.fetchone() is None:
+            cur = await conn.execute(
+                "SELECT status FROM bookings WHERE id = %s AND user_id = %s", (hold_id, user["id"])
+            )
+            current = await cur.fetchone()
+            if current is None:
+                raise Problem(404, "not-found", "Hold not found")
+            raise Problem(
+                409, "hold-not-editable", "Hold can no longer be changed", f"Its status is {current['status']}"
+            )
+        cur = await conn.execute(_HOLD_SELECT + " WHERE b.id = %s", (hold_id,))
+        row = await cur.fetchone()
+    response.headers["ETag"] = f'"{row["version"]}"'
+    return _view(row)
 
 
 @router.get("/v1/holds/{hold_id}")
