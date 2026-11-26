@@ -36,7 +36,7 @@ python experiments/check_foundation.py
 
 ## Web ЛР1
 
-Каталог і утримання місць: `GET /v1/events` (виконання; `id` = `performance_id`), `GET /v1/events/{id}/categories`, `POST /v1/holds` (201 + Location, одна транзакція, 10 хвилин), `GET /v1/holds` (курсор), `GET /v1/holds/{id}`; для DPC — `GET /v1/tickets/{code}` (код або `ticket_id`) із Bearer `WEB_API_TOKEN`. До ЛР3 користувач задається заголовком `X-User-Id` (`usr-alice`, `usr-bob`, `usr-staff`, міграція `020_web_demo_seed.sql`). Контракт: [web/openapi.yaml](web/openapi.yaml); модель, стани й інваріанти: [docs/contracts/WEB-LR1.md](docs/contracts/WEB-LR1.md); результати й межі перевірки: [results/web-lr1.md](results/web-lr1.md).
+Каталог і утримання місць: `GET /v1/events` (виконання; `id` = `performance_id`), `GET /v1/events/{id}/categories`, `POST /v1/holds` (201 + Location, одна транзакція, 10 хвилин), `GET /v1/holds` (курсор), `GET /v1/holds/{id}`; для DPC — `GET /v1/tickets/{code}` (код або `ticket_id`) із Bearer `WEB_API_TOKEN`. У ЛР1–ЛР2 користувач задавався заголовком `X-User-Id` (`usr-alice`, `usr-bob`, `usr-staff`, міграція `020_web_demo_seed.sql`); з ЛР3 його замінює вхід за паролем. Контракт: [web/openapi.yaml](web/openapi.yaml); модель, стани й інваріанти: [docs/contracts/WEB-LR1.md](docs/contracts/WEB-LR1.md); результати й межі перевірки: [results/web-lr1.md](results/web-lr1.md).
 
 ```powershell
 docker compose up -d --build
@@ -60,6 +60,17 @@ Get-Content -Raw experiments/web_lr2_reset.sql | docker compose exec -T postgres
 python experiments/test_web_lr2.py
 node experiments/test_web_lr2_client.mjs
 ```
+
+## Web ЛР3
+
+Вхід за паролем, сесія в cookie `session` (HttpOnly, SameSite=Lax), власник об'єкта лише з сесії, `PATCH /v1/holds/{id}`, дії персоналу `close-sales` і `open-sales`, захист від міжсайтового запиту (403 `csrf-rejected`). Міграція `022_web_sessions.sql`; заголовок `X-User-Id` більше не приймається. Демо-входи: `alice@example.invalid` / `alice-pass`, `bob@example.invalid` / `bob-pass`, `staff@example.invalid` / `staff-pass`. Контракт і рішення: [docs/contracts/WEB-LR3.md](docs/contracts/WEB-LR3.md); результати: [results/web-lr3.md](results/web-lr3.md).
+
+```powershell
+Get-Content -Raw experiments/web_lr2_reset.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
+python experiments/test_web_lr3.py
+```
+
+Клієнт ЛР3 і далі відкривається на http://localhost:8081 після запуску `python -m http.server 8081 --bind 127.0.0.1 --directory web/client`.
 
 ## Контракт команди
 
