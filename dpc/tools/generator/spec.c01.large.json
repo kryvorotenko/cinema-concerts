@@ -1,0 +1,69 @@
+{
+    "seed":  7,
+    "reference":  {
+                      "name":  "performances",
+                      "rows":  3,
+                      "key":  "performance_id",
+                      "key_prefix":  "screening-c01-",
+                      "key_width":  3,
+                      "hot_key":  "screening-c01-headliner",
+                      "columns":  {
+                                      "title":  {
+                                                    "kind":  "format",
+                                                    "template":  "Концерт «Вечірня сцена {n:02d}»"
+                                                },
+                                      "venue":  {
+                                                    "kind":  "format",
+                                                    "template":  "Майданчик {n:02d}"
+                                                },
+                                      "headliner":  {
+                                                        "kind":  "format",
+                                                        "template":  "Гурт {n:02d}"
+                                                    }
+                                  }
+                  },
+    "facts":  {
+                  "name":  "scans",
+                  "rows":  100000,
+                  "columns":  {
+                                  "scan_id":  {
+                                                  "kind":  "seq",
+                                                  "prefix":  "scan-c01-",
+                                                  "width":  4
+                                              },
+                                  "performance_id":  {
+                                                         "kind":  "ref",
+                                                         "table":  "performances",
+                                                         "hot_share":  0.6
+                                                     },
+                                  "gate":  {
+                                               "kind":  "choice",
+                                               "values":  [
+                                                              "gate-a",
+                                                              "gate-b",
+                                                              "gate-c"
+                                                          ]
+                                           },
+                                  "sector_id":  {
+                                                    "kind":  "format",
+                                                    "template":  "{performance_id}-{gate}"
+                                                },
+                                  "event_time":  {
+                                                     "kind":  "timestamp",
+                                                     "from":  "2026-10-12T17:00:00+00:00",
+                                                     "seconds":  3600
+                                                 },
+                                  "accepted":  {
+                                                   "kind":  "choice",
+                                                   "values":  [
+                                                                  true,
+                                                                  false
+                                                              ],
+                                                   "weights":  [
+                                                                   4,
+                                                                   1
+                                                               ]
+                                               }
+                              }
+              }
+}
