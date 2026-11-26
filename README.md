@@ -89,9 +89,3 @@ docker compose run --rm broker-init
 ```
 
 SQL-перевірка відкочує свої тестові дані. Розподіл лабораторних: [TEAM.md](docs/knowledge/TEAM.md); походження каркасів: [UPSTREAM.md](docs/UPSTREAM.md). Вихідні матеріали Andrii Kovtunenko — MIT, оригінальні LICENSE збережено.
-
-## DPC ЛР1
-
-API приймає `POST /v1/scans` із Bearer-токеном, повертає 202 та виконує перевірку білета у пулі `WORKERS`. `GET /v1/scans/{scan_id}` показує `queued`, `processing`, `done`, `rejected` або `failed`; `GET /v1/sector/{sector_id}` показує місткість і кількість усередині. Повна черга повертає 429 з `Retry-After: 1`. Ключ погашення — `ticket_id`, тому інший `scan_id` для вже перевіреного білета повертає збережене рішення.
-
-Типовий `TICKET_CHECK_MODE=web` звертається до `GET /v1/tickets/{code}` Web-сервісу. До появи цього маршруту для локальних тестів можна запустити DPC окремо з `TICKET_CHECK_MODE=fixture`; цей режим читає лише заздалегідь підготовлені білети з БД. Вимоги до відповіді Web та точні команди дослідів: [DPC LR1](docs/contracts/DPC-LR1.md). Режим `RESOURCE_MODE=unprotected` дозволений лише разом із fixture і тільки для `dpc-test-` секторів.
