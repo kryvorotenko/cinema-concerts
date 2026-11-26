@@ -72,6 +72,22 @@ python experiments/test_web_lr3.py
 
 Клієнт ЛР3 і далі відкривається на http://localhost:8081 після запуску `python -m http.server 8081 --bind 127.0.0.1 --directory web/client`.
 
+## Web ЛР6
+
+Конкретні місця (ряд і номер) замість лічильника категорії за прапорцем `explicit-seats`, межа повернення до попередньої версії та коректне завершення за SIGTERM (`/ready` 503, дозавершення розпочатих запитів). Міграція `023_web_seats.sql`. Контракт і рішення: [docs/contracts/WEB-LR6.md](docs/contracts/WEB-LR6.md); результати: [results/web-lr6.md](results/web-lr6.md).
+
+```powershell
+docker compose up -d --build
+docker compose restart nginx
+docker compose exec app-a python -m app.seats_admin backfill
+docker compose exec app-a python -m app.seats_admin check
+python experiments/test_web_lr6.py
+docker compose run --rm --no-deps -v "${PWD}/experiments:/srv/experiments" app-a python /srv/experiments/test_web_lr6_shutdown.py
+docker compose exec postgres psql -U app -d app -c "UPDATE feature_flags SET enabled = true WHERE name = 'explicit-seats'"
+```
+
+Змінні для тестів: `BASES` (адреси екземплярів через кому) і `DATABASE_URL`.
+
 ## Контракт команди
 
 Деталі: [контракт Дня 1](docs/contracts/README.md) та [інструкція для учасників і агентів](docs/TEAM-WORKFLOW.md). Усі компоненти використовують одну БД та одного брокера. Топіки: `domain-events`, `notifications`, `ticket-telemetry`. Останній є перейменуванням топіка `scans` із методички; зміст подій входу збережено.
