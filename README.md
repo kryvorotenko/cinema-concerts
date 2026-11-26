@@ -1,6 +1,6 @@
 # C01. Кінотеатри й концерти
 
-Спільний каркас для курсів «Обмін даними у Web-застосунках» і «Розподілені та паралельні обчислення». Лабораторні роботи ще не реалізовані.
+Спільний проєкт для курсів «Обмін даними у Web-застосунках» і «Розподілені та паралельні обчислення». DPC ЛР1 реалізована та перевірена на локальних fixtures; інтеграція з майбутнім Web ticket API очікує його реалізації. Інші лабораторні ще не реалізовані.
 
 ## Початок роботи
 
@@ -28,7 +28,7 @@ python experiments/check_foundation.py
 |---|---|
 | `docker-compose.yml` | Єдиний запуск, порти, спільні PostgreSQL і Kafka |
 | `.env.example`, `config/project.env` | Параметри й спільні константи |
-| `migrations/001_shared_foundation.sql` | Початкова схема для обох курсів |
+| `migrations/001_shared_foundation.sql`, `010_dpc_scans.sql` | Спільна схема та життєвий цикл DPC scans |
 | `web/`, `dpc/` | Компоненти відповідних курсів |
 | `experiments/`, `results/` | Сценарії перевірки й майбутні результати |
 | `docs/contracts/` | Контракт команди: таблиці, топіки, порти й запуск |
@@ -49,6 +49,18 @@ npx @redocly/cli lint --config web/redocly.yaml web/openapi.yaml
 
 Клієнт: `python -m http.server 8081 --bind 127.0.0.1 --directory web/client`, відкрити http://localhost:8081.
 
+## Web ЛР2
+
+Ідемпотентність і інваріант під конкуренцією: атомарне зменшення залишку, заголовок `Idempotency-Key` для `POST /v1/holds` (повтор повертає збережену відповідь із `Idempotent-Replayed: true`), 409 `request-in-progress`, 503 `overloaded`, точка відмови після commit і клієнтський повтор із тим самим ключем. Міграція `021_web_idempotency.sql`. Контракт і рішення: [docs/contracts/WEB-LR2.md](docs/contracts/WEB-LR2.md); результати: [results/web-lr2.md](results/web-lr2.md).
+
+```powershell
+docker compose up -d --build
+docker compose restart nginx
+Get-Content -Raw experiments/web_lr2_reset.sql | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U app -d app
+python experiments/test_web_lr2.py
+node experiments/test_web_lr2_client.mjs
+```
+
 ## Контракт команди
 
 Деталі: [контракт Дня 1](docs/contracts/README.md) та [інструкція для учасників і агентів](docs/TEAM-WORKFLOW.md). Усі компоненти використовують одну БД та одного брокера. Топіки: `domain-events`, `notifications`, `ticket-telemetry`. Останній є перейменуванням топіка `scans` із методички; зміст подій входу збережено.
@@ -66,3 +78,9 @@ docker compose run --rm broker-init
 ```
 
 SQL-перевірка відкочує свої тестові дані. Розподіл лабораторних: [TEAM.md](docs/knowledge/TEAM.md); походження каркасів: [UPSTREAM.md](docs/UPSTREAM.md). Вихідні матеріали Andrii Kovtunenko — MIT, оригінальні LICENSE збережено.
+
+## DPC ЛР1
+
+API приймає `POST /v1/scans` із Bearer-токеном, повертає 202 та виконує перевірку білета у пулі `WORKERS`. `GET /v1/scans/{scan_id}` показує `queued`, `processing`, `done`, `rejected` або `failed`; `GET /v1/sector/{sector_id}` показує місткість і кількість усередині. Повна черга повертає 429 з `Retry-After: 1`. Ключ погашення — `ticket_id`, тому інший `scan_id` для вже перевіреного білета повертає збережене рішення.
+
+Типовий `TICKET_CHECK_MODE=web` звертається до `GET /v1/tickets/{code}` Web-сервісу. До появи цього маршруту для локальних тестів можна запустити DPC окремо з `TICKET_CHECK_MODE=fixture`; цей режим читає лише заздалегідь підготовлені білети з БД. Вимоги до відповіді Web та точні команди дослідів: [DPC LR1](docs/contracts/DPC-LR1.md). Режим `RESOURCE_MODE=unprotected` дозволений лише разом із fixture і тільки для `dpc-test-` секторів.
